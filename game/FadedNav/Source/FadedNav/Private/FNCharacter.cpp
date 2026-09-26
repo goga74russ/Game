@@ -5,6 +5,8 @@
 #include "Animation/AnimSequence.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/PoseableMeshComponent.h"
+#include "AnimationRuntime.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PointLightComponent.h"
@@ -108,6 +110,16 @@ AFNCharacter::AFNCharacter()
 		Head->SetVisibility(false);
 		Gun->SetVisibility(false); // kept as the muzzle reference point
 	}
+	SkeletonMesh = CreateDefaultSubobject<UPoseableMeshComponent>(TEXT("SkeletonMesh"));
+	SkeletonMesh->SetupAttachment(GetCapsuleComponent());
+	SkeletonMesh->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -90.f), FRotator(0.f, -90.f, 0.f));
+	SkeletonMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SkeletonMesh->SetVisibility(false);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> SkelAsset(TEXT("/Game/Characters/Skeleton/SK_HeroSkeleton.SK_HeroSkeleton"));
+	if (SkelAsset.Succeeded()) { SkeletonMesh->SetSkinnedAssetAndUpdate(SkelAsset.Object); }
+	// The Wraith keeps animating while hidden: it drives the skeleton.
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+
 	FireMontage = WraithFire.Object;
 	DeathAnim = WraithDeath.Object;
 }
@@ -122,6 +134,7 @@ void AFNCharacter::BeginPlay()
 	LastSafeLocation = GetActorLocation();
 	Checkpoint = GetActorLocation();
 	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), SparkColor); }
+	InitRetarget();
 	SparkLight->SetLightColor(SparkColor);
 
 	// The chapter starts as a Spark; the flat boss arena (?Arena) starts as full Flesh with the rifle.
@@ -131,6 +144,7 @@ void AFNCharacter::BeginPlay()
 	{
 		SetStage(EFNStage::Spark, false);
 		ShowMessage(TEXT("Ты — Искра. Пять побед — и обретёшь остов."));
+		if (FParse::Param(FCommandLine::Get(), TEXT("StartSkeleton"))) { SetStage(EFNStage::Skeleton, false); } // test key
 	}
 	else
 	{
@@ -534,7 +548,10 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 	// Visuals: ember -> pale bone frame -> full body.
 	SparkOrb->SetVisibility(Stage == EFNStage::Spark, true);
 	GetMesh()->SetVisibility(Stage == EFNStage::Flesh && bHasSkin);
-	const bool bFrame = Stage == EFNStage::Skeleton || (Stage == EFNStage::Flesh && !bHasSkin);
+	const bool bBones = Stage == EFNStage::Skeleton && bHasSkin && SkeletonMesh->GetSkinnedAsset() && RetargetBones.Num() > 0;
+	SkeletonMesh->SetVisibility(bBones);
+	if (bBones && FParse::Param(FCommandLine::Get(), TEXT("ShowWraith"))) { GetMesh()->SetVisibility(true); } // debug: compare poses
+	const bool bFrame = (Stage == EFNStage::Skeleton && !bBones) || (Stage == EFNStage::Flesh && !bHasSkin);
 	Body->SetVisibility(bFrame);
 	Head->SetVisibility(bFrame);
 	if (Stage == EFNStage::Skeleton)
@@ -760,6 +777,17 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 void AFNCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	UpdateRetarget();
+	// Test key "-PoseShot": stand, then run sideways past the camera, screenshot both, quit.
+	if (FParse::Param(FCommandLine::Get(), TEXT("PoseShot")))
+	{
+		const float T = GetWorld()->GetTimeSeconds();
+		static int32 Taken = 0;
+		if (T > 12.f && T < 16.f) { AddMovementInput(GetActorRightVector(), 1.f); }
+		if (T > 10.f && Taken == 0) { Taken = 1; FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots/20_stand.png"), false, false); }
+		if (T > 14.f && Taken == 1) { Taken = 2; FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots/21_run.png"), false, false); }
+		if (T > 17.f && Taken == 2) { Taken = 3; Cast<APlayerController>(GetController())->ConsoleCommand(TEXT("quit")); }
+	}
 
 	if (bDead)
 	{
@@ -867,4 +895,87 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFOV, DeltaSeconds, 12.f));
 	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, TargetArm, DeltaSeconds, 12.f);
 	GetCharacterMovement()->MaxWalkSpeed = bAiming ? DefaultWalkSpeed * 0.6f : DefaultWalkSpeed;
+}
+
+void AFNCharacter::InitRetarget()
+{
+	RetargetBones.Reset();
+	const USkeletalMesh* SrcMesh = GetMesh()->GetSkeletalMeshAsset();
+	const USkeletalMesh* DstMesh = Cast<USkeletalMesh>(SkeletonMesh->GetSkinnedAsset());
+	if (!SrcMesh || !DstMesh)
+	{
+		return;
+	}
+	// Parent-before-child order: world-space sets depend on the parent already being posed.
+	static const TCHAR* Map[][2] = {
+		{ TEXT("pelvis"), TEXT("Hips") }, { TEXT("spine_01"), TEXT("Spine") }, { TEXT("spine_02"), TEXT("Spine1") }, { TEXT("spine_03"), TEXT("Spine2") },
+		{ TEXT("neck_01"), TEXT("Neck") }, { TEXT("head"), TEXT("Head") },
+		{ TEXT("clavicle_l"), TEXT("LeftShoulder") }, { TEXT("upperarm_l"), TEXT("LeftArm") }, { TEXT("lowerarm_l"), TEXT("LeftForeArm") }, { TEXT("hand_l"), TEXT("LeftHand") },
+		{ TEXT("clavicle_r"), TEXT("RightShoulder") }, { TEXT("upperarm_r"), TEXT("RightArm") }, { TEXT("lowerarm_r"), TEXT("RightForeArm") }, { TEXT("hand_r"), TEXT("RightHand") },
+		{ TEXT("thigh_l"), TEXT("LeftUpLeg") }, { TEXT("calf_l"), TEXT("LeftLeg") }, { TEXT("foot_l"), TEXT("LeftFoot") }, { TEXT("ball_l"), TEXT("LeftToeBase") },
+		{ TEXT("thigh_r"), TEXT("RightUpLeg") }, { TEXT("calf_r"), TEXT("RightLeg") }, { TEXT("foot_r"), TEXT("RightFoot") }, { TEXT("ball_r"), TEXT("RightToeBase") },
+	};
+	const FReferenceSkeleton& SrcRef = SrcMesh->GetRefSkeleton();
+	const FReferenceSkeleton& DstRef = DstMesh->GetRefSkeleton();
+	auto RefCS = [](const FReferenceSkeleton& R, int32 I) { return FAnimationRuntime::GetComponentSpaceTransformRefPose(R, I); };
+
+	for (const auto& M : Map)
+	{
+		FRetargetBone B;
+		B.Src = M[0];
+		B.Dst = FName(M[1]); // the importer strips the "mixamorig:" namespace
+		B.SrcIdx = SrcRef.FindBoneIndex(B.Src);
+		B.DstIdx = DstRef.FindBoneIndex(B.Dst);
+		if (B.SrcIdx == INDEX_NONE || B.DstIdx == INDEX_NONE)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Retarget: missing %s -> %s"), *B.Src.ToString(), *B.Dst.ToString());
+			continue;
+		}
+		RetargetBones.Add(B);
+	}
+	// Rest-pose alignment (A-pose vs T-pose), in the Wraith component's space (both meshes ride the capsule rigidly).
+	const FTransform DstToSrc = SkeletonMesh->GetRelativeTransform().GetRelativeTransform(GetMesh()->GetRelativeTransform());
+	for (int32 i = 0; i < RetargetBones.Num(); ++i)
+	{
+		FRetargetBone& B = RetargetBones[i];
+		for (int32 j = i + 1; j < RetargetBones.Num(); ++j)
+		{
+			const FRetargetBone& C = RetargetBones[j];
+			if (SrcRef.GetParentIndex(C.SrcIdx) == B.SrcIdx && B.Src != TEXT("pelvis") && B.Src != TEXT("spine_03"))
+			{
+				const FVector SrcDir = (RefCS(SrcRef, C.SrcIdx).GetLocation() - RefCS(SrcRef, B.SrcIdx).GetLocation()).GetSafeNormal();
+				const FVector DstDir = DstToSrc.TransformVector(RefCS(DstRef, C.DstIdx).GetLocation() - RefCS(DstRef, B.DstIdx).GetLocation()).GetSafeNormal();
+				B.Align = FQuat::FindBetweenNormals(DstDir, SrcDir);
+				break;
+			}
+		}
+	}
+}
+
+void AFNCharacter::UpdateRetarget()
+{
+	if (!SkeletonMesh->IsVisible() || RetargetBones.Num() == 0)
+	{
+		return;
+	}
+	const FReferenceSkeleton& SrcRef = GetMesh()->GetSkeletalMeshAsset()->GetRefSkeleton();
+	const FReferenceSkeleton& DstRef = SkeletonMesh->GetSkinnedAsset()->GetRefSkeleton();
+	const TArray<FTransform>& SrcPose = GetMesh()->GetComponentSpaceTransforms();
+	const FTransform SrcC = GetMesh()->GetComponentTransform();
+	const FTransform DstToSrc = SkeletonMesh->GetRelativeTransform().GetRelativeTransform(GetMesh()->GetRelativeTransform());
+	for (const FRetargetBone& B : RetargetBones)
+	{
+		if (!SrcPose.IsValidIndex(B.SrcIdx)) { return; }
+		// Everything in Wraith component space, then out to world.
+		const FTransform SrcRest = FAnimationRuntime::GetComponentSpaceTransformRefPose(SrcRef, B.SrcIdx);
+		const FTransform DstRest = FAnimationRuntime::GetComponentSpaceTransformRefPose(DstRef, B.DstIdx) * DstToSrc;
+		const FTransform& SrcNow = SrcPose[B.SrcIdx];
+		const FQuat Delta = SrcNow.GetRotation() * SrcRest.GetRotation().Inverse();
+		const FQuat Rot = SrcC.GetRotation() * (Delta * B.Align * DstRest.GetRotation());
+		SkeletonMesh->SetBoneRotationByName(B.Dst, Rot.Rotator(), EBoneSpaces::WorldSpace);
+		if (B.Src == TEXT("pelvis"))
+		{
+			SkeletonMesh->SetBoneLocationByName(B.Dst, SrcC.TransformPosition(DstRest.GetLocation() + (SrcNow.GetLocation() - SrcRest.GetLocation())), EBoneSpaces::WorldSpace);
+		}
+	}
 }

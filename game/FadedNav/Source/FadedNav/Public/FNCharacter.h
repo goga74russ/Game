@@ -115,6 +115,8 @@ protected:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UFNSkillTree> Tree;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SparkOrb;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPointLightComponent> SparkLight;
+	// Skeleton stage body (Fab "Free Pack - Human Skeleton", Mixamo-rigged). Copies the hidden Wraith pose each frame.
+	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPoseableMeshComponent> SkeletonMesh;
 
 	UPROPERTY() TObjectPtr<class UAnimMontage> FireMontage;
 	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
@@ -136,6 +138,12 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
 private:
+	// Per-bone retarget Wraith (Epic names) -> Mixamo skeleton, in world space, aligning rest-pose bone directions.
+	struct FRetargetBone { FName Src, Dst; int32 SrcIdx = INDEX_NONE, DstIdx = INDEX_NONE; FQuat Align = FQuat::Identity; };
+	TArray<FRetargetBone> RetargetBones;
+	void InitRetarget();
+	void UpdateRetarget();
+
 	void BuildInput();
 
 	void OnMove(const FInputActionValue& Value);
