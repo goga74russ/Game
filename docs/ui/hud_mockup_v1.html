@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>HUD Навь v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Ruslan+Display&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bone:#e8dfc8; --bone-dim:#a89f8a; --ink:#0d0b09cc; --ink2:#15110dee;
+  --blood:#9b2a1f; --blood-hi:#d0503a; --chip:#e8c9a0; --stam:#cfc6a8;
+  --ember:#6fdcff; --gold:#b8955a; --line:#b8955a88;
+}
+*{box-sizing:border-box;margin:0}
+body{background:#0a0908;display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px;font-family:'Cormorant Garamond',serif;color:var(--bone)}
+.note{max-width:1280px;color:#bbb;font-size:15px;line-height:1.4}
+.frame{position:relative;width:1280px;height:720px;overflow:hidden;border:1px solid #333;
+  background:url('bg_vysi.png') center/cover,#6b5a40}
+/* faded-memory grade: vignette + grain */
+.frame::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;
+  background:radial-gradient(ellipse at 50% 45%,transparent 55%,#0008 100%)}
+.frame::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.12;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+.hud{position:absolute;inset:0;z-index:2}
+.t{text-shadow:0 1px 2px #000,0 0 6px #000a}
+
+/* ---- boss ---- */
+.boss{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:640px;text-align:center}
+.boss .name{font-family:'Ruslan Display',serif;font-size:30px;letter-spacing:6px;color:var(--bone)}
+.boss .sub{font-size:15px;color:var(--bone-dim);letter-spacing:3px;margin-top:-2px}
+.bar{position:relative;height:12px;background:var(--ink);border:1px solid var(--line);margin-top:6px}
+.bar i{position:absolute;inset:0;right:auto}
+.boss .bar .chip{width:62%;background:var(--chip);opacity:.7}
+.boss .bar .fill{width:55%;background:linear-gradient(#c24a36,#7c1f16);box-shadow:0 0 10px #d0503a88}
+.boss .bar .mark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--gold)}
+.orn{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:4px;opacity:.8}
+.orn span{height:1px;width:220px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+
+/* ---- minimap ---- */
+.map{position:absolute;top:22px;right:26px;width:180px;text-align:right}
+.map .disc{width:150px;height:150px;margin-left:auto;border-radius:50%;background:radial-gradient(#231c14ee,#0c0a08ee);border:1px solid var(--line);position:relative;box-shadow:inset 0 0 20px #000}
+.map .zone{font-size:18px;margin-top:6px;letter-spacing:2px}
+.map .pts{font-size:14px;color:var(--gold)}
+
+/* ---- relic / treba (bottom-left) ---- */
+.relic{position:absolute;left:30px;bottom:30px;display:flex;align-items:flex-end;gap:10px}
+.relic .ring{width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:radial-gradient(#2a2016,#0c0a08);display:grid;place-items:center;position:relative}
+.relic .cnt{font-size:22px;font-weight:700}
+
+/* ---- player block (bottom-centre) ---- */
+.player{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);display:flex;gap:16px;align-items:flex-end}
+.slots{display:flex;gap:6px}
+.slot{width:50px;height:50px;background:var(--ink2);border:1px solid var(--line);position:relative;display:grid;place-items:center;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.slot b{position:absolute;left:5px;top:1px;font-size:13px;color:var(--bone-dim)}
+.slot.sealed{opacity:.55}
+.slot .cd{position:absolute;inset:0;background:conic-gradient(#000a 0 35%,transparent 0)}
+.bars{width:360px}
+.stage{display:flex;justify-content:space-between;font-size:16px;letter-spacing:2px;color:var(--bone-dim);margin-bottom:3px}
+.stage em{font-style:normal;color:var(--ember);text-shadow:0 0 8px var(--ember)}
+.hp{height:18px}
+.hp .chip{width:78%;background:var(--chip);opacity:.6}
+.hp .fill{width:68%;background:linear-gradient(#c24a36,#6d1a12);animation:ember 2.4s ease-in-out infinite}
+.hp .num{position:absolute;left:8px;top:-1px;font-size:15px;font-weight:700}
+.hp .notch{position:absolute;top:0;bottom:0;width:1px;background:#0008}
+@keyframes ember{50%{box-shadow:0 0 12px #d0503aaa,inset 0 0 6px #ffb08055}}
+.st{height:6px;margin-top:4px}
+.st .fill{width:84%;background:linear-gradient(90deg,#8d8468,var(--stam))}
+
+/* ---- weapon (bottom-right) ---- */
+.weap{position:absolute;right:30px;bottom:28px;text-align:right}
+.weap .list{font-size:15px;color:var(--bone-dim);line-height:1.35;margin-bottom:6px}
+.weap .list .on{color:var(--bone)}
+.weap .row{display:flex;gap:14px;align-items:center;justify-content:flex-end}
+.weap .ammo{font-size:44px;font-weight:700;line-height:1}
+.weap .ammo small{font-size:20px;color:var(--bone-dim)}
+.weap .ico{width:64px;height:64px;border-radius:50%;border:1px solid var(--line);background:radial-gradient(#1f2a2e,#0b0c0c);display:grid;place-items:center}
+.key{display:inline-block;border:1px solid var(--line);padding:0 6px;font-size:13px;color:var(--bone-dim)}
+
+/* ---- mob over head, subtitle, crosshair, dmg numbers ---- */
+.mob{position:absolute;left:880px;top:238px;text-align:center}
+.mob .n{font-size:13px;color:var(--bone-dim);letter-spacing:1px}
+.mob .b{width:70px;height:6px;background:var(--ink);border:1px solid #0008}
+.mob .b i{display:block;height:100%;width:40%;background:var(--blood-hi)}
+.dmg{position:absolute;left:910px;top:200px;font-size:24px;font-weight:700;color:#f1e3c0}
+.dmg.w{left:940px;top:180px;color:#ffb35c;font-size:28px}
+.sub{position:absolute;bottom:128px;left:50%;transform:translateX(-50%);font-size:24px;font-style:italic;text-align:center;width:800px}
+.sub b{font-style:normal;color:var(--gold);letter-spacing:2px;font-size:18px;margin-right:6px}
+.cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+.toast{position:absolute;left:50%;top:170px;transform:translateX(-50%);text-align:center}
+.toast .h{font-family:'Ruslan Display';font-size:34px;letter-spacing:5px;color:var(--ember);text-shadow:0 0 18px #6fdcff88}
+.toast .s{font-size:18px;color:var(--bone-dim)}
+</style>
+</head>
+<body>
+<div class="note"><b>Макет HUD v1 — «Померкшая Навь».</b> Раскладка прежняя, меняется вид: старинные шрифты (Ruslan Display — заголовки, Cormorant Garamond — текст, оба OFL), тлеющая полоса HP, рамки со срезанными углами, золотая линия-орнамент, иконки SVG, зерно и виньетка «выцветшей памяти». Всё процедурное, без чужих ассетов. Фон — кадр нашей игры.</div>
+
+<div class="frame"><div class="hud">
+
+  <!-- boss -->
+  <div class="boss t">
+    <div class="name">ПЕРУН</div>
+    <div class="sub">наставник · вторая гроза</div>
+    <div class="bar"><i class="chip"></i><i class="fill"></i><span class="mark" style="left:33.3%"></span><span class="mark" style="left:66.6%"></span></div>
+    <div class="orn"><span></span>
+      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M13 2 5 14h6l-2 8 10-13h-6z" fill="none" stroke="#b8955a" stroke-width="1.5"/></svg>
+    <span></span></div>
+  </div>
+
+  <!-- minimap -->
+  <div class="map t">
+    <div class="disc">
+      <svg width="150" height="150" viewBox="0 0 150 150">
+        <path d="M60 140 C70 110 58 90 75 70 S95 40 90 12" stroke="#b8955a" stroke-width="2" fill="none" stroke-dasharray="4 3"/>
+        <circle cx="75" cy="72" r="4" fill="#6fdcff"/><circle cx="75" cy="72" r="9" fill="none" stroke="#6fdcff55"/>
+        <path d="M86 18 l4 -8 l4 8z" fill="#e8dfc8"/>
+      </svg>
+    </div>
+    <div class="zone">Стрелокопни</div>
+    <div class="pts">✦ 2 очка древа · <span class="key">Tab</span></div>
+  </div>
+
+  <div class="toast t"><div class="h">ОСТОВ</div><div class="s">Искра собирает кости</div></div>
+
+  <svg class="cross" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="11" fill="none" stroke="#e8dfc8aa" stroke-width="1.2"/><circle cx="17" cy="17" r="1.6" fill="#e8dfc8"/><path d="M17 2v5M17 27v5M2 17h5M27 17h5" stroke="#e8dfc8" stroke-width="1.2"/></svg>
+
+  <div class="mob t"><div class="n">Отросток</div><div class="b"><i></i></div></div>
+  <div class="dmg t">24</div><div class="dmg w t">61</div>
+
+  <div class="sub t"><b>ПЕРУН</b>Годно…</div>
+
+  <!-- treba / relic -->
+  <div class="relic t">
+    <div class="ring">
+      <svg width="38" height="38" viewBox="0 0 24 24"><path d="M12 3c2 4 5 5 5 10a5 5 0 0 1-10 0c0-3 2-4 2-7 2 2 3 2 3-3z" fill="#d88b3a" opacity=".9"/><path d="M12 12c1 2 2 2 2 4a2 2 0 0 1-4 0c0-1 1-2 2-4z" fill="#ffe0a0"/></svg>
+    </div>
+    <div><div class="cnt">3</div><div style="font-size:14px;color:var(--bone-dim)">требы</div></div>
+  </div>
+
+  <!-- player -->
+  <div class="player t">
+    <div class="slots">
+      <div class="slot"><b>1</b><svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2 4 12l8 10 8-10z" fill="none" stroke="#6fdcff" stroke-width="1.5"/><path d="M12 7v10" stroke="#6fdcff"/></svg></div>
+      <div class="slot"><b>2</b><div class="cd"></div><svg width="26" height="26" viewBox="0 0 24 24"><path d="M4 20 20 4M14 4h6v6" fill="none" stroke="#e8dfc8" stroke-width="1.5"/></svg></div>
+      <div class="slot"><b>3</b></div>
+      <div class="slot sealed"><b>4</b><svg width="24" height="24" viewBox="0 0 24 24"><rect x="6" y="11" width="12" height="9" fill="none" stroke="#a89f8a"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="#a89f8a"/></svg></div>
+    </div>
+    <div class="bars">
+      <div class="stage"><span><em>●</em> Скелет</span><span>убито 7 / 10</span></div>
+      <div class="bar hp"><i class="chip"></i><i class="fill"></i>
+        <span class="notch" style="left:50%"></span><span class="num">34 / 50</span></div>
+      <div class="bar st"><i class="fill"></i></div>
+    </div>
+  </div>
+
+  <!-- weapon -->
+  <div class="weap t">
+    <div class="list"><div class="on">Плазма</div><div>Ружьё</div><div style="opacity:.4">Дробовик</div></div>
+    <div class="row">
+      <div class="ammo">∞</div>
+      <div class="ico"><svg width="34" height="34" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#6fdcff" opacity=".85"/><circle cx="12" cy="12" r="9" fill="none" stroke="#6fdcff66"/></svg></div>
+    </div>
+    <div style="margin-top:6px"><span class="key">Q</span> <span class="key">колесо</span></div>
+  </div>
+
+</div></div>
+</body>
+</html>
