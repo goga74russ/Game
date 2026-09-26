@@ -139,8 +139,30 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 {
 	Sun = InSun;
 
+	// With an imported Landscape the terrain pieces (floor, masses, ramps, plateaus) are skipped;
+	// props, landmarks and labels stay. Heights match the heightmap (tools/heightmap).
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->GetClass()->GetName().Contains(TEXT("Landscape")))
+		{
+			bHasLandscape = true;
+			break;
+		}
+	}
+
+	// With an imported Landscape the terrain pieces (floor, masses, ramps, plateaus) are skipped;
+	// props, landmarks and labels stay. Heights match the heightmap (tools/heightmap).
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->GetClass()->GetName().Contains(TEXT("Landscape")))
+		{
+			bHasLandscape = true;
+			break;
+		}
+	}
+
 	// ---------- Mountain mass: valley floor + stepped body under the path, so it reads as one slope ----------
-	Box(FVector(420.f, 0.f, -4.f), FVector(1400.f, 900.f, 2.f), FLinearColor(0.2f, 0.19f, 0.16f));
+	if (!bHasLandscape) { Box(FVector(420.f, 0.f, -4.f), FVector(1400.f, 900.f, 2.f), FLinearColor(0.2f, 0.19f, 0.16f)); }
 	struct FMass { FVector TopM; FVector SizeM; };
 	const FMass Masses[] = {
 		{ FVector(95.f, 25.f, 9.f),    FVector(90.f, 60.f, 13.f) },   // Okolitsa shoulder
@@ -159,13 +181,13 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 	};
 	for (const FMass& Mass : Masses)
 	{
-		Box(Mass.TopM, Mass.SizeM, FLinearColor(0.22f, 0.21f, 0.18f));
+		if (!bHasLandscape) { Box(Mass.TopM, Mass.SizeM, FLinearColor(0.22f, 0.21f, 0.18f)); }
 	}
 
 	// ---------- 1. Sukhorechye (village) + Okolitsa. Dimness 0.1 ----------
-	Box(FVector(0.f, 0.f, 0.f), FVector(90.f, 80.f, 4.f), Ground(0.1f));
-	Box(FVector(0.f, -40.f, -2.f), FVector(90.f, 8.f, 1.f), Ground(0.15f));        // dry riverbed
-	Box(FVector(-45.f, 0.f, 6.f), FVector(1.f, 80.f, 6.f), Ground(0.2f));           // southern clay wall (edge of the ring)
+	if (!bHasLandscape) { Box(FVector(0.f, 0.f, 0.f), FVector(90.f, 80.f, 4.f), Ground(0.1f)); }
+	if (!bHasLandscape) { Box(FVector(0.f, -40.f, -2.f), FVector(90.f, 8.f, 1.f), Ground(0.15f)); } // dry riverbed
+	if (!bHasLandscape) { Box(FVector(-45.f, 0.f, 6.f), FVector(1.f, 80.f, 6.f), Ground(0.2f)); } // southern clay wall (edge of the ring)
 	const FVector Houses[] = { {-25, 25, 0}, {-10, 30, 0}, {8, 28, 0}, {25, 22, 0}, {-28, -15, 0}, {20, -18, 0}, {30, 5, 0} };
 	for (const FVector& H : Houses)
 	{
@@ -176,25 +198,25 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 	Cyl(FVector(0.f, 0.f, 0.5f), 2.f, 1.f, Stone);                                   // well
 	Label(FVector(0.f, 0.f, 4.f), TEXT("SUKHORECHYE"), FColor(255, 220, 170));
 
-	Ramp(FVector(40.f, 15.f, 0.f), FVector(140.f, 38.f, 18.f), 16.f, Ground(0.18f)); // Okolitsa corridor
+	if (!bHasLandscape) { Ramp(FVector(40.f, 15.f, 0.f), FVector(140.f, 38.f, 18.f), 16.f, Ground(0.18f)); } // Okolitsa corridor
 	Label(FVector(110.f, 30.f, 19.f), TEXT("SPARK -> SKELETON (5 kills)"), FColor(200, 200, 255));
 
 	// ---------- 2. Oath Stone. Dimness 0.25 ----------
-	Box(FVector(160.f, 40.f, 18.f), FVector(42.f, 42.f, 4.f), Ground(0.25f));
+	if (!bHasLandscape) { Box(FVector(160.f, 40.f, 18.f), FVector(42.f, 42.f, 4.f), Ground(0.25f)); }
 	Box(FVector(160.f, 40.f, 18.8f), FVector(3.f, 2.f, 0.8f), Stone);                // oath stone
-	Ball(FVector(175.f, 70.f, 18.f), 14.f, Sod);                                     // burial mound (half-buried)
+	if (!bHasLandscape) { Ball(FVector(175.f, 70.f, 18.f), 14.f, Sod); } // burial mound (half-buried)
 	LootColumn(FVector(158.f, 36.f, 18.f));
 	Label(FVector(160.f, 40.f, 22.f), TEXT("OATH STONE - WEAPON 1"), FColor(255, 200, 120));
 
 	// ---------- 3. Strelokopni. Dimness 0.4 ----------
-	Ramp(FVector(180.f, 40.f, 18.f), FVector(280.f, -20.f, 25.f), 14.f, Ground(0.32f));
-	Ramp(FVector(280.f, -20.f, 25.f), FVector(420.f, -20.f, 55.f), 90.f, Ground(0.4f)); // the dug-up slope
+	if (!bHasLandscape) { Ramp(FVector(180.f, 40.f, 18.f), FVector(280.f, -20.f, 25.f), 14.f, Ground(0.32f)); }
+	if (!bHasLandscape) { Ramp(FVector(280.f, -20.f, 25.f), FVector(420.f, -20.f, 55.f), 90.f, Ground(0.4f)); } // the dug-up slope
 	for (int32 i = 0; i < 12; ++i)                                                        // pit rims (craters)
 	{
 		const float X = 300.f + (i % 4) * 30.f;
 		const float Y = -55.f + (i / 4) * 30.f + ((i % 2) ? 8.f : -6.f);
 		const float Z = 25.f + (X - 280.f) * (30.f / 140.f);
-		Cyl(FVector(X, Y, Z + 0.4f), 3.f + (i % 3), 0.8f, Ground(0.55f));
+		if (!bHasLandscape) { Cyl(FVector(X, Y, Z + 0.4f), 3.f + (i % 3), 0.8f, Ground(0.55f)); }
 	}
 	for (int32 i = 0; i < 20; ++i)                                                        // thunder-arrows sticking out
 	{
@@ -209,14 +231,14 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 		Cyl(Leg, 0.2f, 4.f, Wood);
 	}
 	Label(FVector(360.f, 10.f, 50.f), TEXT("SKELETON -> FLESH (5 kills)"), FColor(200, 200, 255));
-	Ramp(FVector(245.f, -50.f, 22.f), FVector(160.f, 20.f, 18.f), 3.f, Ground(0.3f));  // shortcut crawl back to the Oath Stone
+	if (!bHasLandscape) { Ramp(FVector(245.f, -50.f, 22.f), FVector(160.f, 20.f, 18.f), 3.f, Ground(0.3f)); } // shortcut crawl back to the Oath Stone
 	Label(FVector(230.f, -40.f, 24.f), TEXT("SHORTCUT"), FColor(180, 180, 180));
-	Box(FVector(435.f, 0.f, 55.f), FVector(20.f, 30.f, 3.f), Ground(0.45f));
+	if (!bHasLandscape) { Box(FVector(435.f, 0.f, 55.f), FVector(20.f, 30.f, 3.f), Ground(0.45f)); }
 	Label(FVector(430.f, 0.f, 59.f), TEXT("TREE CHOICE 1"), FColor(255, 200, 120));
 
 	// ---------- 4. Bucket Row. Dimness 0.6 ----------
-	Ramp(FVector(445.f, 0.f, 55.f), FVector(525.f, 10.f, 65.f), 20.f, Ground(0.5f));
-	Box(FVector(540.f, 20.f, 65.f), FVector(35.f, 170.f, 4.f), Ground(0.6f));
+	if (!bHasLandscape) { Ramp(FVector(445.f, 0.f, 55.f), FVector(525.f, 10.f, 65.f), 20.f, Ground(0.5f)); }
+	if (!bHasLandscape) { Box(FVector(540.f, 20.f, 65.f), FVector(35.f, 170.f, 4.f), Ground(0.6f)); }
 	for (int32 i = 0; i < 8; ++i)                                                      // wells with sweeps and buckets
 	{
 		const float Y = -60.f + i * 22.f;
@@ -231,14 +253,14 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 	Label(FVector(620.f, 20.f, 78.f), TEXT("TREE CHOICE 2"), FColor(255, 200, 120));
 
 	// Climb to the treba and the hill.
-	Ramp(FVector(555.f, 20.f, 65.f), FVector(640.f, 10.f, 78.f), 8.f, Ground(0.65f));
-	Box(FVector(647.f, 10.f, 78.f), FVector(14.f, 14.f, 3.f), Ground(0.7f));
+	if (!bHasLandscape) { Ramp(FVector(555.f, 20.f, 65.f), FVector(640.f, 10.f, 78.f), 8.f, Ground(0.65f)); }
+	if (!bHasLandscape) { Box(FVector(647.f, 10.f, 78.f), FVector(14.f, 14.f, 3.f), Ground(0.7f)); }
 	Cyl(FVector(645.f, 10.f, 79.f), 1.5f, 2.f, Silver);                              // treba (moon silver)
 	Label(FVector(645.f, 10.f, 82.f), TEXT("TREBA"), FColor(200, 215, 255));
 
 	// ---------- 5. Kumirnaya Hill: exam arena. Dimness 0.8 ----------
-	Ramp(FVector(652.f, 10.f, 78.f), FVector(698.f, -8.f, 90.f), 5.f, Ground(0.75f));
-	Cyl(FVector(720.f, 0.f, 88.f), 44.f, 4.f, Ground(0.8f));                        // arena disc, top at Z 90
+	if (!bHasLandscape) { Ramp(FVector(652.f, 10.f, 78.f), FVector(698.f, -8.f, 90.f), 5.f, Ground(0.75f)); }
+	if (!bHasLandscape) { Cyl(FVector(720.f, 0.f, 88.f), 44.f, 4.f, Ground(0.8f)); } // arena disc, top at Z 90
 	Cyl(FVector(720.f, 0.f, 90.75f), 1.2f, 1.5f, FLinearColor(0.05f, 0.05f, 0.05f)); // charred stump (landmark, not cover)
 	for (int32 i = 0; i < 32; ++i)                                                     // invisible wall at R 24 (gap at the entrance)
 	{
@@ -252,8 +274,8 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 	Label(FVector(705.f, -5.f, 96.f), TEXT("EXAM ARENA"), FColor(255, 120, 120));
 
 	// ---------- 6. Thunder Ridge. Dimness 1.0 ----------
-	Ramp(FVector(742.f, 0.f, 90.f), FVector(850.f, 0.f, 118.f), 6.f, Ground(0.9f));
-	Box(FVector(867.f, 5.f, 118.f), FVector(35.f, 20.f, 3.f), Ground(1.f));
+	if (!bHasLandscape) { Ramp(FVector(742.f, 0.f, 90.f), FVector(850.f, 0.f, 118.f), 6.f, Ground(0.9f)); }
+	if (!bHasLandscape) { Box(FVector(867.f, 5.f, 118.f), FVector(35.f, 20.f, 3.f), Ground(1.f)); }
 	Cyl(FVector(860.f, 0.f, 129.f), 3.f, 22.f, Wood);                                // oak trunk
 	Ball(FVector(860.f, 0.f, 142.f), 16.f, FLinearColor(0.12f, 0.16f, 0.1f));       // crown
 	for (int32 i = 0; i < 5; ++i)

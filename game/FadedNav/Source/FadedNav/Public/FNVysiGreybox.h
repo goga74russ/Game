@@ -39,4 +39,5 @@ private:
 	float FlashRemaining = 0.f;
 	float ShotClock = 0.f;
 	int32 ShotTaken = -1;
+	bool bHasLandscape = false;
 };
