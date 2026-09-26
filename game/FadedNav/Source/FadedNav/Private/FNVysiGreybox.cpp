@@ -1,6 +1,11 @@
 #include "FNVysiGreybox.h"
 
 #include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/PostProcessVolume.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -296,6 +301,62 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 	OakFlash->SetLightColor(FLinearColor(0.6f, 0.65f, 1.f));
 	OakFlash->SetAttenuationRadius(60000.f);
 	OakFlash->SetIntensity(0.f);
+
+	SetupAtmosphere();
+}
+
+void AFNVysiGreybox::SetupAtmosphere()
+{
+	FActorSpawnParameters P;
+	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// Low golden sun, the storm front sits upper-left of the climb (style_v0.1: Vysi motif).
+	if (Sun)
+	{
+		Sun->SetActorRotation(FRotator(-24.f, 60.f, 0.f));
+	}
+
+	// Height fog with volumetric scattering: dusty haze in the valleys, clearer toward the ridge.
+	for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It)
+	{
+		UExponentialHeightFogComponent* Fog = It->GetComponent();
+		Fog->SetFogDensity(0.018f);
+		Fog->SetFogHeightFalloff(0.04f);
+		Fog->SetFogInscatteringColor(FLinearColor(0.45f, 0.5f, 0.6f));
+		Fog->SetDirectionalInscatteringColor(FLinearColor(0.9f, 0.7f, 0.45f));
+		Fog->SetVolumetricFog(true);
+		break;
+	}
+
+	// Volumetric clouds from the engine's simple cloud material.
+	if (AVolumetricCloud* Clouds = GetWorld()->SpawnActor<AVolumetricCloud>(FVector::ZeroVector, FRotator::ZeroRotator, P))
+	{
+		if (UMaterialInterface* CloudMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
+		{
+			if (UVolumetricCloudComponent* C = Clouds->FindComponentByClass<UVolumetricCloudComponent>()) { C->SetMaterial(CloudMat); }
+		}
+	}
+
+	// Global post process: manual exposure + grading; values follow the climb in Tick.
+	Grade = GetWorld()->SpawnActor<APostProcessVolume>(FVector::ZeroVector, FRotator::ZeroRotator, P);
+	if (Grade)
+	{
+		Grade->bUnbound = true;
+		FPostProcessSettings& S = Grade->Settings;
+		S.bOverride_AutoExposureMethod = true;
+		S.AutoExposureMethod = AEM_Manual;
+		S.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+		S.AutoExposureApplyPhysicalCameraExposure = false;
+		S.bOverride_AutoExposureBias = true;
+		S.bOverride_WhiteTemp = true;
+		S.bOverride_ColorSaturation = true;
+		S.bOverride_ColorContrast = true;
+		S.ColorContrast = FVector4(1.08f, 1.08f, 1.08f, 1.f);
+		S.bOverride_VignetteIntensity = true;
+		S.VignetteIntensity = 0.45f;
+		S.bOverride_FilmGrainIntensity = true;
+		S.FilmGrainIntensity = 0.06f;
+	}
 }
 
 void AFNVysiGreybox::Tick(float DeltaSeconds)
@@ -347,8 +408,16 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 	if (Sun)
 	{
 		UDirectionalLightComponent* L = CastChecked<UDirectionalLightComponent>(Sun->GetLightComponent());
-		L->SetIntensity(FMath::Lerp(7.f, 2.2f, Dim));
-		L->SetLightColor(FMath::Lerp(FLinearColor(1.f, 0.85f, 0.65f), FLinearColor(0.7f, 0.75f, 0.95f), Dim));
+		L->SetIntensity(FMath::Lerp(6.f, 3.f, Dim));
+		L->SetLightColor(FMath::Lerp(FLinearColor(1.f, 0.8f, 0.55f), FLinearColor(0.7f, 0.76f, 0.95f), Dim));
+	}
+	if (Grade)
+	{
+		FPostProcessSettings& S = Grade->Settings;
+		S.AutoExposureBias = FMath::Lerp(0.2f, 0.7f, Dim);                       // tame the bright valley, keep the ridge readable
+		S.WhiteTemp = FMath::Lerp(7200.f, 5600.f, Dim);                              // warm below, cold above
+		const float Sat = FMath::Lerp(0.95f, 0.72f, Dim);                            // colour drains with the memory
+		S.ColorSaturation = FVector4(Sat, Sat, Sat, 1.f);
 	}
 
 	LightningTimer -= DeltaSeconds;
@@ -356,7 +425,19 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 	{
 		LightningTimer = 12.f;
 		FlashRemaining = 0.12f;
-		OakFlash->SetIntensity(300000.f);
+		OakFlash->SetIntensity(2000000.f);
+
+		// Visible bolt: jagged blue-violet line from the clouds into the oak's crown (never pure white: GDD §9).
+		FVector Prev = FVector(860.f, 0.f, 420.f) * M;
+		const FVector Target = FVector(860.f, 0.f, 150.f) * M;
+		for (int32 i = 1; i <= 7; ++i)
+		{
+			const float A = i / 7.f;
+			FVector Next = FMath::Lerp(FVector(860.f, 0.f, 420.f) * M, Target, A);
+			if (i < 7) { Next += FVector(FMath::FRandRange(-1500.f, 1500.f), FMath::FRandRange(-1500.f, 1500.f), 0.f); }
+			DrawDebugLine(GetWorld(), Prev, Next, FColor(170, 180, 255), false, 0.15f, 0, 60.f);
+			Prev = Next;
+		}
 	}
 	if (FlashRemaining > 0.f)
 	{
