@@ -5,6 +5,7 @@
 #include "Engine/Font.h"
 #include "EngineUtils.h"
 #include "FNCharacter.h"
+#include "FNGameMode.h"
 #include "FNHealthComponent.h"
 #include "FNPerunBoss.h"
 
@@ -71,6 +72,12 @@ void AFNHUD::DrawHUD()
 			? FString(TEXT("RELOADING"))
 			: FString::Printf(TEXT("%d / %d"), Player->GetAmmo(), Player->GetReserve());
 		DrawText(AmmoText, FLinearColor(1.f, 0.85f, 0.5f), W - 220.f, H - 90.f, Medium, 1.4f);
+
+		// Kill counter (drives the Spark -> Skeleton -> Flesh evolution next).
+		if (const AFNGameMode* GM = GetWorld()->GetAuthGameMode<AFNGameMode>())
+		{
+			DrawText(FString::Printf(TEXT("KILLS %d"), GM->GetKills()), FLinearColor(0.8f, 0.8f, 0.8f), W - 220.f, H - 130.f, Small);
+		}
 	}
 
 	if (Boss)

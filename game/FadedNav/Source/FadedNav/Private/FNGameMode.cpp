@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "FNCharacter.h"
 #include "FNHUD.h"
+#include "FNMob.h"
 #include "FNPerunBoss.h"
 #include "FNVysiGreybox.h"
 #include "Kismet/GameplayStatics.h"
@@ -119,7 +120,62 @@ void AFNGameMode::BuildArena()
 		{
 			Level->Build(Sun);
 		}
+		SpawnChapterMobs();
 		// Stands in the centre with his back to the entrance.
 		World->SpawnActor<AFNPerunBoss>(AFNVysiGreybox::ArenaCenter() + FVector(300.f, 0.f, 200.f), FRotator(0.f, 0.f, 0.f), Params);
+	}
+}
+
+void AFNGameMode::NotifyMobKilled(AFNMob* /*Mob*/)
+{
+	++Kills;
+}
+
+void AFNGameMode::SpawnChapterMobs()
+{
+	// Placement from docs/level/vysi_layout_v0.1.md §2 (metres, X = north/uphill). Elites wait for the director's decision.
+	struct FMobSpot { float X; float Y; EFNMobType Type; };
+	using T = EFNMobType;
+	const FMobSpot Spots[] = {
+		// 1. Sukhorechye, northern edge: first 2 Otrosts, one at a time.
+		{ 45.f, 10.f, T::Otrost }, { 55.f, 30.f, T::Otrost },
+		// Okolitsa: 3 Otrosts (1, then 2) -> 5 kills -> Skeleton at (110, 30).
+		{ 80.f, 25.f, T::Otrost }, { 98.f, 18.f, T::Otrost }, { 100.f, 38.f, T::Otrost },
+		// 2. Oath Stone: 3 Otrosts + 1 Strelnik.
+		{ 150.f, 28.f, T::Otrost }, { 166.f, 52.f, T::Otrost }, { 172.f, 24.f, T::Otrost }, { 186.f, 45.f, T::Strelnik },
+		// 3. Strelokopni: 6 Otrosts, 3 Strelniks, 1 Ryhlets.
+		{ 300.f, -40.f, T::Otrost }, { 320.f, 20.f, T::Otrost }, { 340.f, -20.f, T::Otrost },
+		{ 372.f, -50.f, T::Otrost }, { 390.f, 30.f, T::Otrost }, { 410.f, -30.f, T::Otrost },
+		{ 330.f, -62.f, T::Strelnik }, { 382.f, 2.f, T::Strelnik }, { 416.f, 26.f, T::Strelnik },
+		{ 352.f, -45.f, T::Ryhlets },
+		// 4. Bucket Row: 6 Otrosts, 2 Strelniks, 2 Ryhletses.
+		{ 500.f, -40.f, T::Otrost }, { 510.f, 20.f, T::Otrost }, { 530.f, 72.f, T::Otrost },
+		{ 560.f, -22.f, T::Otrost }, { 570.f, 42.f, T::Otrost }, { 590.f, 0.f, T::Otrost },
+		{ 545.f, -56.f, T::Strelnik }, { 575.f, 86.f, T::Strelnik },
+		{ 530.f, 0.f, T::Ryhlets }, { 582.f, -40.f, T::Ryhlets },
+	};
+
+	UWorld* World = GetWorld();
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	constexpr float M = 100.f;
+
+	for (const FMobSpot& Spot : Spots)
+	{
+		// Drop onto whatever ground is there (Landscape or grey-box masses).
+		const FVector Top(Spot.X * M, Spot.Y * M, 500.f * M);
+		const FVector Bottom(Spot.X * M, Spot.Y * M, -100.f * M);
+		FHitResult Hit;
+		FCollisionQueryParams Query(SCENE_QUERY_STAT(FNMobGround), false);
+		if (!World->LineTraceSingleByChannel(Hit, Top, Bottom, ECC_WorldStatic, Query))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("FadedNav: no ground under mob spot (%.0f, %.0f) m, skipped"), Spot.X, Spot.Y);
+			continue;
+		}
+		const FVector At = Hit.ImpactPoint + FVector(0.f, 0.f, 130.f);
+		if (AFNMob* Mob = World->SpawnActor<AFNMob>(At, FRotator(0.f, 180.f, 0.f), Params))
+		{
+			Mob->InitType(Spot.Type);
+		}
 	}
 }
