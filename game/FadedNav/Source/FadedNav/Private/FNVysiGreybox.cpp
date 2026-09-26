@@ -395,8 +395,9 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 				UE_LOG(LogTemp, Warning, TEXT("FNEXAM boss=%s hero=%s dead=%d"), *Boss->GetActorLocation().ToString(), *Hero->GetActorLocation().ToString(), Hero->IsDead() ? 1 : 0);
 			}
 			if (T > 41.5f) { Shot(8, TEXT("13_exam_epilogue")); }
-			if (T > 47.f) { Shot(9, TEXT("14_end_card")); }
-			if (T > 49.f) { PC->ConsoleCommand(TEXT("quit")); }
+			if (T > 46.3f) { Shot(9, TEXT("13b_thunder")); }
+			if (T > 51.f) { Shot(10, TEXT("14_end_card")); }
+			if (T > 53.f) { PC->ConsoleCommand(TEXT("quit")); }
 		}
 		return;
 	}

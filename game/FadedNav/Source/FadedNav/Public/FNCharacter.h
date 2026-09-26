@@ -66,6 +66,7 @@ public:
 	// Exam hooks.
 	void ReviveAt(const FVector& At);
 	void GiveTrace();              // cosmetic trace for the rare exam win (no power)
+	void Flinch() { FlinchRemaining = 0.45f; } // startles at thunder
 	void FindRune(int32 Node);
 
 	// Kills needed for each evolution step (GDD §4: ~5 per stage [D]).
@@ -196,6 +197,7 @@ private:
 
 	bool bTreeOpen = false;
 	bool bHasTrace = false;
+	float FlinchRemaining = 0.f;
 	float StageBaseHealth = 100.f;
 	float StageBaseSpeed = 500.f;
 	struct FFNTreeCache { float Ranged = 1.f, FireRate = 1.f, Weak = 0.f, Reload = 0.f, Reserve = 0.f, Melee = 0.f, MeleeHeal = 0.f, Stamina = 0.f, Dodge = 0.f, IFrames = 0.f; } TreeMods;

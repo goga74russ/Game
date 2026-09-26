@@ -495,7 +495,7 @@ void AFNPerunBoss::Tick(float DeltaSeconds)
 		return;
 
 	case EFNBossState::Epilogue:
-		if (Target)
+		if (Target && EpilogueStep < 3) // from the thunder on he stands perfectly still
 		{
 			const FVector To = Target->GetActorLocation() - GetActorLocation();
 			SetActorRotation(FMath::RInterpTo(GetActorRotation(), FRotator(0.f, To.Rotation().Yaw, 0.f), DeltaSeconds, 3.f));
@@ -515,7 +515,15 @@ void AFNPerunBoss::Tick(float DeltaSeconds)
 		}
 		else if (EpilogueStep == 2 && EpilogueClock > 5.5f)
 		{
+			// Final hint without words (director, 2026-09-26): thunder strikes the oak, everyone startles — except him.
 			EpilogueStep = 3;
+			EpilogueClock = 0.f;
+			for (TActorIterator<AFNVysiGreybox> It(GetWorld()); It; ++It) { It->StrikeNow(); }
+			if (Target) { Target->Flinch(); }
+		}
+		else if (EpilogueStep == 3 && EpilogueClock > 3.f)
+		{
+			EpilogueStep = 4;
 			bEndCard = true;
 		}
 		return;

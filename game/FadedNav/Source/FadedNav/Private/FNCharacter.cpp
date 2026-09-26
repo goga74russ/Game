@@ -788,6 +788,15 @@ void AFNCharacter::Tick(float DeltaSeconds)
 		FireShot();
 	}
 
+	// Startle at thunder: short camera jolt.
+	if (FlinchRemaining > 0.f)
+	{
+		FlinchRemaining -= DeltaSeconds;
+		const float A = FMath::Max(0.f, FlinchRemaining) * 30.f;
+		Camera->SetRelativeLocation(FVector(0.f, FMath::FRandRange(-A, A), FMath::FRandRange(-A, A) - A));
+		if (FlinchRemaining <= 0.f) { Camera->SetRelativeLocation(FVector::ZeroVector); }
+	}
+
 	// Aim: tighter camera, slower walk.
 	const float TargetFOV = bAiming ? 60.f : 90.f;
 	const float TargetArm = bAiming ? 190.f : 320.f;

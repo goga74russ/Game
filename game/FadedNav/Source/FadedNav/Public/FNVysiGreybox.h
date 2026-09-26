@@ -23,6 +23,7 @@ public:
 	static FVector ArenaCenter();   // cm
 
 	void Build(ADirectionalLight* InSun);
+	void StrikeNow() { LightningTimer = 0.f; } // force the next oak strike this frame (exam epilogue)
 
 private:
 	AActor* Box(const FVector& TopCenterM, const FVector& SizeM, const FLinearColor& Color, bool bCollide = true);
