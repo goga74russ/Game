@@ -162,6 +162,8 @@ void AFNHUD::FillDisc(float CX, float CY, float R, const FLinearColor& C)
 void AFNHUD::DrawHUD()
 {
 	Super::DrawHUD();
+	static const bool bNoHUD = FParse::Param(FCommandLine::Get(), TEXT("NoHUD")); // test key: clean frames for UI mockups
+	if (bNoHUD) { return; }
 	if (!Canvas)
 	{
 		return;
