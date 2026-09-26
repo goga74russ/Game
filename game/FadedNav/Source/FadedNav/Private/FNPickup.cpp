@@ -39,6 +39,7 @@ void AFNPickup::BeginPlay()
 	case EFNPickupType::Rifle:   Item->SetWorldScale3D(FVector(1.2f, 0.15f, 0.15f)); break;
 	case EFNPickupType::Scatter: Item->SetWorldScale3D(FVector(0.7f, 0.25f, 0.25f)); break;
 	case EFNPickupType::Armor:   Item->SetWorldScale3D(FVector(0.5f, 0.1f, 0.6f)); break;
+	case EFNPickupType::Rune:    Item->SetWorldScale3D(FVector(0.3f)); Item->SetRelativeRotation(FRotator(45.f, 0.f, 45.f)); break;
 	}
 
 	const FLinearColor Wax(1.f, 0.72f, 0.25f);
@@ -51,7 +52,7 @@ void AFNPickup::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	Age += DeltaSeconds;
 	SetActorLocation(BaseLocation + FVector(0.f, 0.f, 12.f * FMath::Sin(Age * 2.5f)));
-	SetActorRotation(FRotator(0.f, Age * 45.f, 0.f));
+	SetActorRotation(Type == EFNPickupType::Rune ? FRotator(45.f, Age * 90.f, 45.f) : FRotator(0.f, Age * 45.f, 0.f));
 
 	for (TActorIterator<AFNCharacter> It(GetWorld()); It; ++It)
 	{
@@ -65,6 +66,7 @@ void AFNPickup::Tick(float DeltaSeconds)
 		case EFNPickupType::Rifle:   P->GiveWeapon(EFNWeapon::Rifle); break;
 		case EFNPickupType::Scatter: P->GiveWeapon(EFNWeapon::Scatter); break;
 		case EFNPickupType::Armor:   P->GiveArmor(25.f); break;
+		case EFNPickupType::Rune:    P->FindRune(RuneNode); break;
 		}
 		Destroy();
 		return;

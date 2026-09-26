@@ -376,7 +376,7 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 			{ FVector(760.f, -10.f, 97.f), 5.f, 8.f, TEXT("06_ridge_oak") },
 		};
 		constexpr int32 NumShots = static_cast<int32>(UE_ARRAY_COUNT(Shots));
-		ShotClock += DeltaSeconds;
+		ShotClock = GetWorld()->GetRealTimeSeconds(); // real time: the tree shot slows game time
 		const int32 Idx = FMath::FloorToInt((ShotClock - 15.f) / 5.f);
 		APlayerController* PC = GetWorld()->GetFirstPlayerController();
 		if (PC && PC->GetPawn() && Idx >= 0 && Idx < NumShots)
@@ -389,6 +389,18 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 			{
 				ShotTaken = Idx;
 				FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString(S.Name) + TEXT(".png"), false, false);
+			}
+		}
+		if (Idx == NumShots && PC)
+		{
+			if (AFNCharacter* Hero = Cast<AFNCharacter>(PC->GetPawn()))
+			{
+				if (!Hero->IsTreeOpen()) { Hero->FindRune(3); Hero->ToggleTree(); }
+				if (FMath::Fmod(ShotClock - 15.f, 5.f) > 3.5f && ShotTaken != Idx)
+				{
+					ShotTaken = Idx;
+					FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("07_tree.png"), false, false);
+				}
 			}
 		}
 		if (Idx >= NumShots + 1 && PC)

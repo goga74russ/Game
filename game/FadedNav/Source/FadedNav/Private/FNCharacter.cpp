@@ -10,6 +10,8 @@
 #include "Components/PointLightComponent.h"
 #include "EngineUtils.h"
 #include "FNGameMode.h"
+#include "FNSkillTree.h"
+#include "Kismet/GameplayStatics.h"
 #include "FNVysiGreybox.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
@@ -69,6 +71,7 @@ AFNCharacter::AFNCharacter()
 
 	Health = CreateDefaultSubobject<UFNHealthComponent>(TEXT("Health"));
 	Health->MaxHealth = 100.f;
+	Tree = CreateDefaultSubobject<UFNSkillTree>(TEXT("Tree"));
 
 	// Spark form: a plasma ember with its own light (the only neon allowed: style_v0.1).
 	SparkOrb = MakePart(TEXT("SparkOrb"), Sphere.Object, FVector(0.f, 0.f, 20.f), FVector(0.45f));
@@ -80,8 +83,9 @@ AFNCharacter::AFNCharacter()
 		Head->SetMaterial(0, ShapeMat.Object);
 	}
 	SparkLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("SparkLight"));
-	SparkLight->SetupAttachment(SparkOrb);
-	SparkLight->SetLightColor(FLinearColor(0.35f, 0.9f, 1.f));
+	SparkLight->SetupAttachment(RootComponent); // stays with the body: bright in the Spark, a dim ember in the Skeleton
+	SparkLight->SetRelativeLocation(FVector(0.f, 0.f, 30.f));
+	SparkLight->SetLightColor(SparkColor);
 	SparkLight->SetAttenuationRadius(900.f);
 	SparkLight->SetIntensity(30000.f);
 	SparkLight->SetCastShadows(false);
@@ -116,7 +120,8 @@ void AFNCharacter::BeginPlay()
 	Health->OnDeath.AddDynamic(this, &AFNCharacter::HandleDeath);
 	LastSafeLocation = GetActorLocation();
 	Checkpoint = GetActorLocation();
-	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.15f, 0.75f, 1.f)); }
+	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), SparkColor); }
+	SparkLight->SetLightColor(SparkColor);
 
 	// The chapter starts as a Spark; the flat boss arena (?Arena) starts as full Flesh with the rifle.
 	bool bChapter = false;
@@ -192,6 +197,9 @@ void AFNCharacter::BuildInput()
 	Mapping->MapKey(Weapon1Action, EKeys::One);
 	Mapping->MapKey(Weapon2Action, EKeys::Two);
 	Mapping->MapKey(Weapon3Action, EKeys::Three);
+	TreeAction = MakeAction(EInputActionValueType::Boolean);
+	TreeAction->bTriggerWhenPaused = true;
+	Mapping->MapKey(TreeAction, EKeys::Tab);
 }
 
 void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -225,11 +233,12 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	Input->BindAction(Weapon1Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon1);
 	Input->BindAction(Weapon2Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon2);
 	Input->BindAction(Weapon3Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon3);
+	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
 }
 
 void AFNCharacter::OnMove(const FInputActionValue& Value)
 {
-	if (bDead || bRolling || !Controller)
+	if (bDead || bRolling || !Controller || bTreeOpen)
 	{
 		return;
 	}
@@ -244,6 +253,10 @@ void AFNCharacter::OnMove(const FInputActionValue& Value)
 
 void AFNCharacter::OnLook(const FInputActionValue& Value)
 {
+	if (bTreeOpen)
+	{
+		return;
+	}
 	const FVector2D Axis = Value.Get<FVector2D>();
 	const float Sensitivity = bAiming ? 0.5f : 1.f;
 	AddControllerYawInput(Axis.X * Sensitivity);
@@ -252,11 +265,12 @@ void AFNCharacter::OnLook(const FInputActionValue& Value)
 
 void AFNCharacter::OnRoll()
 {
-	if (bDead || bRolling || Stamina < RollCost)
+	const float Cost = FMath::Max(5.f, RollCost * (1.f + TreeMods.Dodge));
+	if (bDead || bRolling || Stamina < Cost || bTreeOpen)
 	{
 		return;
 	}
-	Stamina -= RollCost;
+	Stamina -= Cost;
 	StaminaDelay = 0.8f;
 
 	RollDirection = LastMoveInput.IsNearlyZero() ? GetActorForwardVector() : LastMoveInput;
@@ -280,7 +294,7 @@ void AFNCharacter::OnRoll()
 
 	bRolling = true;
 	RollRemaining = CurRollDuration;
-	IFramesRemaining = CurRollIFrames;
+	IFramesRemaining = CurRollIFrames + TreeMods.IFrames;
 	Health->bInvulnerable = true;
 	bWantsFire = false;
 }
@@ -296,7 +310,7 @@ void AFNCharacter::OnReload()
 		return;
 	}
 	bReloading = true;
-	ReloadRemaining = Weapon == EFNWeapon::Scatter ? 1.2f : ReloadTime;
+	ReloadRemaining = (Weapon == EFNWeapon::Scatter ? 1.2f : ReloadTime) / (1.f + TreeMods.Reload);
 }
 
 void AFNCharacter::FinishReload()
@@ -311,11 +325,12 @@ void AFNCharacter::FinishReload()
 
 bool AFNCharacter::AddReserveAmmo(int32 Amount)
 {
-	if (bDead || Reserve >= MaxReserve)
+	const int32 Cap = FMath::RoundToInt(MaxReserve * (1.f + TreeMods.Reserve));
+	if (bDead || Reserve >= Cap)
 	{
 		return false;
 	}
-	Reserve = FMath::Min(MaxReserve, Reserve + Amount);
+	Reserve = FMath::Min(Cap, Reserve + Amount);
 	return true;
 }
 
@@ -330,14 +345,14 @@ void AFNCharacter::FireShot()
 	{
 	case EFNWeapon::Plasma:
 		// Weak energy bolt, no ammo (Spark/Skeleton before the first weapon).
-		FireCooldown = 0.28f;
+		FireCooldown = 0.28f / TreeMods.FireRate;
 		FireTrace(10.f, 1.5f, 3000.f, FColor(90, 230, 255));
 		return;
 
 	case EFNWeapon::Scatter:
 		if (ScatterAmmo <= 0) { OnReload(); return; }
 		--ScatterAmmo;
-		FireCooldown = 0.75f;
+		FireCooldown = 0.75f / TreeMods.FireRate;
 		for (int32 i = 0; i < 8; ++i)
 		{
 			FireTrace(9.f, 6.f, 2500.f, FColor(255, 190, 90));
@@ -348,7 +363,7 @@ void AFNCharacter::FireShot()
 	default:
 		if (Ammo <= 0) { OnReload(); return; }
 		--Ammo;
-		FireCooldown = FireInterval;
+		FireCooldown = FireInterval / TreeMods.FireRate;
 		FireTrace(ShotDamage, bAiming ? AimSpreadDeg : HipSpreadDeg, 20000.f, FColor(255, 190, 90));
 		break;
 	}
@@ -387,7 +402,7 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 		if (UFNHealthComponent* TargetHealth = Hit.GetActor()->FindComponentByClass<UFNHealthComponent>())
 		{
 			const bool bWeak = Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(TEXT("WeakPoint"));
-			if (TargetHealth->ApplyDamage(Damage * (bWeak ? WeakPointMultiplier : 1.f), this) > 0.f)
+			if (TargetHealth->ApplyDamage(Damage * TreeMods.Ranged * (bWeak ? WeakPointMultiplier * (1.f + TreeMods.Weak) : 1.f), this) > 0.f)
 			{
 				LastHitTime = GetWorld()->GetTimeSeconds();
 				bLastHitWeak = bWeak;
@@ -423,7 +438,7 @@ void AFNCharacter::GiveWeapon(EFNWeapon NewWeapon)
 void AFNCharacter::GiveArmor(float Bonus)
 {
 	ArmorBonus += Bonus;
-	Health->MaxHealth += Bonus;
+	ApplyStats();
 	Health->Health = FMath::Min(Health->MaxHealth, Health->Health + Bonus);
 	ShowMessage(FString::Printf(TEXT("Armour +%.0f HP"), Bonus));
 }
@@ -473,6 +488,10 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 		break;
 	}
 
+	// Glow fades with the evolution: bright plasma -> dim ember in the bones -> none (GDD §4).
+	SparkLight->SetIntensity(Stage == EFNStage::Spark ? 30000.f : (Stage == EFNStage::Skeleton ? 4000.f : 0.f));
+	SparkLight->SetVisibility(Stage != EFNStage::Flesh);
+
 	// Visuals: ember -> pale bone frame -> full body.
 	SparkOrb->SetVisibility(Stage == EFNStage::Spark, true);
 	GetMesh()->SetVisibility(Stage == EFNStage::Flesh && bHasSkin);
@@ -488,16 +507,88 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 		}
 	}
 
-	Health->MaxHealth = BaseHealth + ArmorBonus;
+	StageBaseHealth = BaseHealth;
+	StageBaseSpeed = Speed;
+	ApplyStats();
 	Health->Health = Health->MaxHealth;
-	GetCharacterMovement()->MaxWalkSpeed = Speed;
-	DefaultWalkSpeed = Speed;
 
 	if (bAnnounce)
 	{
 		Health->bInvulnerable = true;
 		IFramesRemaining = 1.5f;
 		ShowMessage(Stage == EFNStage::Skeleton ? TEXT("The Spark gathers bones.  (dash)") : TEXT("Flesh returns.  (roll, melee, full health)"));
+	}
+}
+
+int32 AFNCharacter::GetSkillPoints() const
+{
+	const AFNGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AFNGameMode>() : nullptr;
+	const int32 Earned = GM ? GM->GetKills() / 2 : 0; // 1 point per 2 kills [D]
+	return Earned - Tree->GetSpent();
+}
+
+void AFNCharacter::TryAllocate(int32 Node)
+{
+	if (Tree->Allocate(Node, GetSkillPoints()))
+	{
+		ApplyStats();
+		ShowMessage(FString::Printf(TEXT("Learned: %s"), UFNSkillTree::Nodes()[Node].Name));
+	}
+}
+
+void AFNCharacter::FindRune(int32 Node)
+{
+	Tree->FindRune(Node);
+	ShowMessage(FString::Printf(TEXT("Rune-key found: %s  (Tab)"), UFNSkillTree::Nodes()[Node].Name));
+}
+
+void AFNCharacter::ApplyStats()
+{
+	const FFNTreeStats S = Tree->ComputeStats();
+	TreeMods.Ranged = S.Ranged();
+	TreeMods.FireRate = S.FireRate();
+	TreeMods.Weak = S.WeakInc;
+	TreeMods.Reload = S.ReloadInc;
+	TreeMods.Reserve = S.ReserveInc;
+	TreeMods.Melee = S.MeleeInc;
+	TreeMods.MeleeHeal = S.MeleeHeal;
+	TreeMods.Stamina = S.StaminaRegenInc;
+	TreeMods.Dodge = S.DodgeCostInc;
+	TreeMods.IFrames = S.RollIFramesFlat;
+
+	const float OldMax = FMath::Max(1.f, Health->MaxHealth);
+	const float Ratio = Health->Health / OldMax;
+	Health->MaxHealth = FMath::Max(1.f, (StageBaseHealth + ArmorBonus + S.MaxHPFlat) * (1.f + S.MaxHPInc));
+	Health->Health = FMath::Clamp(Ratio * Health->MaxHealth, 0.f, Health->MaxHealth);
+	Health->IncomingMultiplier = S.DamageTaken();
+
+	DefaultWalkSpeed = StageBaseSpeed * (1.f + S.MoveInc);
+	GetCharacterMovement()->MaxWalkSpeed = DefaultWalkSpeed;
+}
+
+void AFNCharacter::ToggleTree()
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || bDead)
+	{
+		return;
+	}
+	bTreeOpen = !bTreeOpen;
+	bWantsFire = false;
+	// Time nearly stops (not a hard pause, so HUD hit boxes and input keep working).
+	UGameplayStatics::SetGlobalTimeDilation(this, bTreeOpen ? 0.02f : 1.f);
+	PC->bShowMouseCursor = bTreeOpen;
+	PC->bEnableClickEvents = bTreeOpen;
+	PC->bEnableMouseOverEvents = bTreeOpen;
+	if (bTreeOpen)
+	{
+		FInputModeGameAndUI Mode;
+		Mode.SetHideCursorDuringCapture(false);
+		PC->SetInputMode(Mode);
+	}
+	else
+	{
+		PC->SetInputMode(FInputModeGameOnly());
 	}
 }
 
@@ -518,7 +609,7 @@ void AFNCharacter::Revive()
 
 void AFNCharacter::OnMelee()
 {
-	if (bDead || bRolling || Stamina < MeleeCost || Stage == EFNStage::Spark)
+	if (bDead || bRolling || Stamina < MeleeCost || Stage == EFNStage::Spark || bTreeOpen)
 	{
 		return;
 	}
@@ -539,7 +630,10 @@ void AFNCharacter::OnMelee()
 			Damaged.Add(A);
 			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>())
 			{
-				H->ApplyDamage(MeleeDamage, this);
+				if (H->ApplyDamage(MeleeDamage * (1.f + TreeMods.Melee), this) > 0.f && TreeMods.MeleeHeal > 0.f)
+				{
+					Health->Health = FMath::Min(Health->MaxHealth, Health->Health + TreeMods.MeleeHeal);
+				}
 				LastHitTime = GetWorld()->GetTimeSeconds();
 				bLastHitWeak = false;
 			}
@@ -644,7 +738,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	}
 	else
 	{
-		Stamina = FMath::Min(MaxStamina, Stamina + StaminaRegen * DeltaSeconds);
+		Stamina = FMath::Min(MaxStamina, Stamina + StaminaRegen * (1.f + TreeMods.Stamina) * DeltaSeconds);
 	}
 
 	// Reload
@@ -659,7 +753,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 
 	// Fire
 	FireCooldown -= DeltaSeconds;
-	if (bWantsFire && !bRolling && !bReloading && FireCooldown <= 0.f && Controller)
+	if (bWantsFire && !bRolling && !bReloading && FireCooldown <= 0.f && Controller && !bTreeOpen)
 	{
 		FireShot();
 	}

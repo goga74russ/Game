@@ -56,9 +56,20 @@ public:
 	float GetMessageAge() const;
 	void ShowMessage(const FString& Text);
 
+	// Passive tree (GDD §6).
+	class UFNSkillTree* GetTree() const { return Tree; }
+	bool IsTreeOpen() const { return bTreeOpen; }
+	int32 GetSkillPoints() const;
+	void TryAllocate(int32 Node);
+	void ToggleTree();
+	void FindRune(int32 Node);
+
 	// Kills needed for each evolution step (GDD §4: ~5 per stage [D]).
 	UPROPERTY(EditAnywhere, Category = "Evolution") int32 KillsToSkeleton = 5;
 	UPROPERTY(EditAnywhere, Category = "Evolution") int32 KillsToFlesh = 10;
+
+	// Colour of the Spark = element of the starting god/biome (Vysi / Perun: thunder blue). GDD §4.
+	UPROPERTY(EditAnywhere, Category = "Evolution") FLinearColor SparkColor = FLinearColor(0.15f, 0.75f, 1.f);
 
 	// --- Tunables [D] = placeholder until playtest ---
 	UPROPERTY(EditAnywhere, Category = "Weapon") float ShotDamage = 25.f;
@@ -90,6 +101,7 @@ protected:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Head;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Gun;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UFNHealthComponent> Health;
+	UPROPERTY(VisibleAnywhere) TObjectPtr<class UFNSkillTree> Tree;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SparkOrb;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPointLightComponent> SparkLight;
 
@@ -109,6 +121,7 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> Weapon1Action;
 	UPROPERTY() TObjectPtr<UInputAction> Weapon2Action;
 	UPROPERTY() TObjectPtr<UInputAction> Weapon3Action;
+	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
 private:
 	void BuildInput();
@@ -132,6 +145,7 @@ private:
 	void OnWeapon3() { SelectWeapon(EFNWeapon::Scatter); }
 	void SetStage(EFNStage NewStage, bool bAnnounce);
 	void Revive();
+	void ApplyStats();
 	void FinishReload();
 
 	UFUNCTION() void HandleDeath(AActor* Killer);
@@ -175,4 +189,9 @@ private:
 	float RespawnTimer = -1.f;
 	FString Message;
 	double MessageTime = -100.0;
+
+	bool bTreeOpen = false;
+	float StageBaseHealth = 100.f;
+	float StageBaseSpeed = 500.f;
+	struct FFNTreeCache { float Ranged = 1.f, FireRate = 1.f, Weak = 0.f, Reload = 0.f, Reserve = 0.f, Melee = 0.f, MeleeHeal = 0.f, Stamina = 0.f, Dodge = 0.f, IFrames = 0.f; } TreeMods;
 };

@@ -7,7 +7,7 @@
 class UStaticMeshComponent;
 
 UENUM()
-enum class EFNPickupType : uint8 { Rifle, Scatter, Armor };
+enum class EFNPickupType : uint8 { Rifle, Scatter, Armor, Rune };
 
 // Chapter loot on the ground (slice_v1: weapon 1 at the Oath Stone, weapon 2 + armour in the shed).
 // Readability channel 3: wax gold with a vertical column (style_v0.1 §2).
@@ -20,6 +20,7 @@ public:
 	AFNPickup();
 
 	void InitType(EFNPickupType InType) { Type = InType; }
+	void InitRune(int32 Node) { Type = EFNPickupType::Rune; RuneNode = Node; }
 	virtual void Tick(float DeltaSeconds) override;
 
 protected:
@@ -30,6 +31,7 @@ protected:
 
 private:
 	EFNPickupType Type = EFNPickupType::Rifle;
+	int32 RuneNode = -1;
 	FVector BaseLocation;
 	float Age = 0.f;
 };

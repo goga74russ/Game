@@ -26,6 +26,9 @@ public:
 
 	bool bInvulnerable = false;
 
+	// Damage taken multiplier from passives (Increased/More, GDD §6).
+	float IncomingMultiplier = 1.f;
+
 	// Returns damage actually applied.
 	float ApplyDamage(float Amount, AActor* Instigator);
 

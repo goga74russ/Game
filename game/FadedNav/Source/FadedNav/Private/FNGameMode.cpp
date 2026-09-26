@@ -13,6 +13,7 @@
 #include "FNHUD.h"
 #include "FNMob.h"
 #include "FNPickup.h"
+#include "FNSkillTree.h"
 #include "FNTreba.h"
 #include "FNPerunBoss.h"
 #include "FNVysiGreybox.h"
@@ -129,9 +130,30 @@ void AFNGameMode::BuildArena()
 	}
 }
 
-void AFNGameMode::NotifyMobKilled(AFNMob* /*Mob*/)
+void AFNGameMode::NotifyMobKilled(AFNMob* Mob)
 {
 	++Kills;
+
+	// Rune-keys drop from chapter mobs: 30% chance, guaranteed after 3 misses [D]. Each rune unlocks one notable/keystone.
+	const TArray<int32>& Order = UFNSkillTree::RuneOrder();
+	if (!Mob || NextRune >= Order.Num())
+	{
+		return;
+	}
+	if (FMath::FRand() < 0.3f || RuneMisses >= 3)
+	{
+		RuneMisses = 0;
+		const FTransform At(Mob->GetActorLocation() + FVector(0.f, 0.f, 60.f));
+		if (AFNPickup* P = GetWorld()->SpawnActorDeferred<AFNPickup>(AFNPickup::StaticClass(), At, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn))
+		{
+			P->InitRune(Order[NextRune++]);
+			P->FinishSpawning(At);
+		}
+	}
+	else
+	{
+		++RuneMisses;
+	}
 }
 
 void AFNGameMode::SpawnChapterItems()

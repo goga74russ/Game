@@ -18,7 +18,7 @@ float UFNHealthComponent::ApplyDamage(float Amount, AActor* Instigator)
 		return 0.f;
 	}
 
-	const float Applied = FMath::Min(Amount, Health);
+	const float Applied = FMath::Min(Amount * IncomingMultiplier, Health);
 	Health -= Applied;
 	if (IsDead())
 	{
