@@ -16,8 +16,15 @@ public:
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 	virtual AActor* FindPlayerStart_Implementation(AController* Player, const FString& IncomingName) override;
 
+	// Kill counter for the Spark -> Skeleton -> Flesh evolution (GDD §4: ~5 kills per stage [D]).
+	void NotifyMobKilled(class AFNMob* Mob);
+	int32 GetKills() const { return Kills; }
+
 private:
 	void BuildArena();
+	void SpawnChapterMobs();
+
+	int32 Kills = 0;
 
 	UPROPERTY()
 	TObjectPtr<AActor> SpawnPoint;
