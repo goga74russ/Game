@@ -1,6 +1,11 @@
 #include "FNCharacter.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
@@ -60,6 +65,26 @@ AFNCharacter::AFNCharacter()
 
 	Health = CreateDefaultSubobject<UFNHealthComponent>(TEXT("Health"));
 	Health->MaxHealth = 100.f;
+
+	// Temporary visuals: Paragon Wraith (Epic, free for UE projects — see docs/tech/assets_licenses.csv).
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> WraithMesh(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Meshes/Wraith.Wraith"));
+	static ConstructorHelpers::FClassFinder<UAnimInstance> WraithAnim(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Wraith_AnimBlueprint"));
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> WraithFire(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Animations/Fire_A_Slow_Montage.Fire_A_Slow_Montage"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> WraithDeath(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Animations/Death_Forward.Death_Forward"));
+	if (WraithMesh.Succeeded())
+	{
+		GetMesh()->SetSkeletalMesh(WraithMesh.Object);
+		GetMesh()->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -90.f), FRotator(0.f, -90.f, 0.f));
+		if (WraithAnim.Succeeded())
+		{
+			GetMesh()->SetAnimInstanceClass(WraithAnim.Class);
+		}
+		Body->SetVisibility(false);
+		Head->SetVisibility(false);
+		Gun->SetVisibility(false); // kept as the muzzle reference point
+	}
+	FireMontage = WraithFire.Object;
+	DeathAnim = WraithDeath.Object;
 }
 
 void AFNCharacter::BeginPlay()
@@ -242,6 +267,14 @@ void AFNCharacter::FireShot()
 	--Ammo;
 	FireCooldown = FireInterval;
 
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+	{
+		if (FireMontage && !Anim->Montage_IsPlaying(FireMontage))
+		{
+			Anim->Montage_Play(FireMontage, 2.5f);
+		}
+	}
+
 	FVector ViewLoc;
 	FRotator ViewRot;
 	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
@@ -319,7 +352,14 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 	bWantsFire = false;
 	bRolling = false;
 	GetCharacterMovement()->DisableMovement();
-	Body->SetRelativeRotation(FRotator(80.f, 0.f, 0.f)); // placeholder "fallen" pose
+	if (DeathAnim && GetMesh()->GetSkeletalMeshAsset())
+	{
+		GetMesh()->PlayAnimation(DeathAnim, false);
+	}
+	else
+	{
+		Body->SetRelativeRotation(FRotator(80.f, 0.f, 0.f)); // grey-box "fallen" pose
+	}
 }
 
 void AFNCharacter::Tick(float DeltaSeconds)

@@ -1,6 +1,11 @@
 #include "FNPerunBoss.h"
 
 #include "AIController.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
@@ -56,6 +61,37 @@ AFNPerunBoss::AFNPerunBoss()
 
 	Health = CreateDefaultSubobject<UFNHealthComponent>(TEXT("Health"));
 	Health->MaxHealth = 3000.f;
+
+	// Temporary visuals: Paragon Greystone as the mentor (Epic, free for UE projects).
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> GreyMesh(TEXT("/Game/ParagonGreystone/Characters/Heroes/Greystone/Meshes/Greystone.Greystone"));
+	static ConstructorHelpers::FClassFinder<UAnimInstance> GreyAnim(TEXT("/Game/ParagonGreystone/Characters/Heroes/Greystone/Greystone_AnimBlueprint"));
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> MontA(TEXT("/Game/ParagonGreystone/Characters/Heroes/Greystone/Animations/Attack_PrimaryA_Montage.Attack_PrimaryA_Montage"));
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> MontB(TEXT("/Game/ParagonGreystone/Characters/Heroes/Greystone/Animations/Attack_PrimaryB_Montage.Attack_PrimaryB_Montage"));
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> MontC(TEXT("/Game/ParagonGreystone/Characters/Heroes/Greystone/Animations/Attack_PrimaryC_Montage.Attack_PrimaryC_Montage"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> DeathSeq(TEXT("/Game/ParagonGreystone/Characters/Heroes/Greystone/Animations/Death.Death"));
+
+	if (GreyMesh.Succeeded())
+	{
+		bHasSkeletalVisual = true;
+		GetMesh()->SetSkeletalMesh(GreyMesh.Object);
+		GetMesh()->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -170.f), FRotator(0.f, -90.f, 0.f));
+		GetMesh()->SetRelativeScale3D(FVector(1.6f));
+		if (GreyAnim.Succeeded())
+		{
+			GetMesh()->SetAnimInstanceClass(GreyAnim.Class);
+		}
+		// Grey-box volumes stay as invisible hit volumes; the head collider follows the head bone.
+		Body->SetVisibility(false);
+		Head->SetVisibility(false);
+		Head->SetupAttachment(GetMesh(), TEXT("head"));
+		Head->SetUsingAbsoluteScale(true);
+		Head->SetRelativeLocation(FVector::ZeroVector);
+		Head->SetRelativeScale3D(FVector(0.7f));
+	}
+	SlamMontage = MontB.Object;
+	BoltsMontage = MontA.Object;
+	JudgmentMontage = MontC.Object;
+	DeathAnim = DeathSeq.Object;
 }
 
 void AFNPerunBoss::BeginPlay()
@@ -92,6 +128,34 @@ void AFNPerunBoss::SetTint(const FLinearColor& Color)
 {
 	if (BodyMID) { BodyMID->SetVectorParameterValue(TEXT("Color"), Color); }
 	if (HeadMID) { HeadMID->SetVectorParameterValue(TEXT("Color"), Color * 1.2f); }
+}
+
+void AFNPerunBoss::SetOverlay(const FLinearColor* Color)
+{
+	// Placeholder silhouette impulse: flash the grey-box volume around the model.
+	// (Engine basic material can't be used on skeletal meshes; a proper overlay material comes in stage 1.)
+	if (!bHasSkeletalVisual)
+	{
+		return;
+	}
+	Body->SetVisibility(Color != nullptr);
+	if (Color)
+	{
+		SetTint(*Color);
+	}
+}
+
+void AFNPerunBoss::PlayMontage(UAnimMontage* Montage, float Duration)
+{
+	if (!Montage)
+	{
+		return;
+	}
+	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+	{
+		const float Rate = Duration > 0.f ? FMath::Clamp(Montage->GetPlayLength() / Duration, 0.4f, 2.f) : 1.f;
+		Anim->Montage_Play(Montage, Rate);
+	}
 }
 
 void AFNPerunBoss::SetPose(bool bRaised)
@@ -146,12 +210,14 @@ void AFNPerunBoss::StartAttack(AFNCharacter* Target)
 	{
 	case EFNBossAttack::Slam:
 		StateDuration = SlamDelay;
+		PlayMontage(SlamMontage, SlamDelay + 0.3f);
 		SpawnTelegraph(GetActorLocation(), SlamRadius, SlamDelay, SlamDamage, false, SlamAmber);
 		break;
 
 	case EFNBossAttack::Bolts:
 	{
 		StateDuration = BoltDelay + 0.9f;
+		PlayMontage(BoltsMontage, 0.f);
 		SpawnTelegraph(Target->GetActorLocation(), BoltRadius, BoltDelay, BoltDamage, false, BoltViolet);
 		BoltTimers.SetNum(2);
 		for (int32 i = 0; i < 2; ++i)
@@ -176,6 +242,8 @@ void AFNPerunBoss::StartAttack(AFNCharacter* Target)
 		SetPose(true);
 		ImpulseRemaining = 0.15f; // one short silhouette impulse, not a strobe
 		SetTint(FLinearColor(4.f, 4.f, 4.f));
+		SetOverlay(&FLinearColor::White);
+		PlayMontage(JudgmentMontage, JudgmentDelay + 0.3f);
 		break;
 	}
 }
@@ -194,7 +262,8 @@ void AFNPerunBoss::Tick(float DeltaSeconds)
 		ImpulseRemaining -= DeltaSeconds;
 		if (ImpulseRemaining <= 0.f)
 		{
-			SetTint(DeadlyRed * 0.8f); // hold red through the wind-up
+			SetTint(DeadlyRed * 0.8f); // hold red through the wind-up (grey-box)
+			SetOverlay(nullptr);       // skeletal visual: single impulse only
 		}
 	}
 
@@ -270,6 +339,14 @@ void AFNPerunBoss::HandleDeath(AActor* /*Killer*/)
 	}
 	SetPose(false);
 	SetTint(FLinearColor(0.15f, 0.15f, 0.17f));
-	Body->SetRelativeRotation(FRotator(0.f, 0.f, 12.f)); // kneels
+	SetOverlay(nullptr);
+	if (bHasSkeletalVisual && DeathAnim)
+	{
+		GetMesh()->PlayAnimation(DeathAnim, false);
+	}
+	else
+	{
+		Body->SetRelativeRotation(FRotator(0.f, 0.f, 12.f)); // kneels
+	}
 	GetCharacterMovement()->DisableMovement();
 }

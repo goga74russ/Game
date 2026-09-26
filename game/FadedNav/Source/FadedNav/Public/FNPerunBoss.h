@@ -55,6 +55,10 @@ protected:
 
 	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> BodyMID;
 	UPROPERTY() TObjectPtr<UMaterialInstanceDynamic> HeadMID;
+	UPROPERTY() TObjectPtr<class UAnimMontage> SlamMontage;
+	UPROPERTY() TObjectPtr<class UAnimMontage> BoltsMontage;
+	UPROPERTY() TObjectPtr<class UAnimMontage> JudgmentMontage;
+	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
 
 private:
 	AFNCharacter* FindTarget() const;
@@ -63,6 +67,9 @@ private:
 	void SpawnAmmo(int32 Count);
 	void SetTint(const FLinearColor& Color);
 	void SetPose(bool bRaised);
+	void SetOverlay(const FLinearColor* Color);
+	void PlayMontage(class UAnimMontage* Montage, float Duration);
+	bool bHasSkeletalVisual = false;
 
 	UFUNCTION() void HandleDeath(AActor* Killer);
 

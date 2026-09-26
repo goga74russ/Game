@@ -68,6 +68,9 @@ protected:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Gun;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UFNHealthComponent> Health;
 
+	UPROPERTY() TObjectPtr<class UAnimMontage> FireMontage;
+	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
+
 	// Input assets are built in code so the tech test needs no editor setup.
 	UPROPERTY() TObjectPtr<UInputMappingContext> Mapping;
 	UPROPERTY() TObjectPtr<UInputAction> MoveAction;
