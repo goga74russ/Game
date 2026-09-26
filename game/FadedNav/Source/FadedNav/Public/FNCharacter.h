@@ -140,10 +140,11 @@ private:
 
 	void OnMove(const FInputActionValue& Value);
 	void OnLook(const FInputActionValue& Value);
-	void OnFireStarted() { bWantsFire = true; }
+	// LMB: melee by default; ranged only while aiming with RMB (director, 2026-09-26).
+	void OnFireStarted() { if (bAiming) { bWantsFire = true; } else { OnMelee(); } }
 	void OnFireStopped() { bWantsFire = false; }
 	void OnAimStarted() { bAiming = true; }
-	void OnAimStopped() { bAiming = false; }
+	void OnAimStopped() { bAiming = false; bWantsFire = false; }
 	void OnRoll();
 	void OnReload();
 	void OnMelee();
@@ -207,6 +208,8 @@ private:
 	bool bTreeOpen = false;
 	bool bHasTrace = false;
 	float FlinchRemaining = 0.f;
+	float MeleeCooldown = 0.f;
+	float MeleeFlash = 0.f;
 	float StageBaseHealth = 100.f;
 	float StageBaseSpeed = 500.f;
 	struct FFNTreeCache { float Ranged = 1.f, FireRate = 1.f, Weak = 0.f, Reload = 0.f, Reserve = 0.f, Melee = 0.f, MeleeHeal = 0.f, Stamina = 0.f, Dodge = 0.f, IFrames = 0.f; } TreeMods;
