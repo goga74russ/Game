@@ -208,7 +208,7 @@ void AFNHUD::DrawHUD()
 			}
 		}
 
-		// ---- Bottom-centre: ability slots 1-4 on the left, then stamina over health (notched, trailing chip).
+		// ---- Bottom-centre: ability slots 1-4 on the left, then health (notched, trailing chip) over stamina.
 		{
 			const float SlotSize = 46.f, Gap = 6.f, BarW = 340.f;
 			const float BlockW = 4.f * (SlotSize + Gap) + 14.f + BarW;
@@ -233,11 +233,8 @@ void AFNHUD::DrawHUD()
 			const float BX = X0 + 4.f * (SlotSize + Gap) + 14.f;
 			const float Max = Player->GetHealth()->MaxHealth;
 
-			// Stamina above health.
-			DrawRect(FrameDark, BX - 2.f, Y0 - 2.f, BarW + 4.f, 10.f);
-			DrawRect(StaminaTone, BX, Y0, BarW * Player->GetStaminaRatio(), 6.f);
-
-			const float HY = Y0 + 12.f;
+			// Health on top, stamina underneath (director, 2026-09-26).
+			const float HY = Y0 + 4.f;
 			const float Ratio = Player->GetHealth()->GetRatio();
 			ShownHealth = ShownHealth < 0.f ? Ratio : FMath::FInterpTo(ShownHealth, Ratio, Dt, Ratio < ShownHealth ? 2.5f : 20.f);
 			DrawRect(FrameDark, BX - 3.f, HY - 3.f, BarW + 6.f, 22.f);
@@ -249,8 +246,11 @@ void AFNHUD::DrawHUD()
 			}
 			DrawText(FString::Printf(TEXT("%.0f / %.0f"), Player->GetHealth()->Health, Max), TextMain, BX + 6.f, HY - 1.f, Small, 0.8f);
 
+			DrawRect(FrameDark, BX - 2.f, HY + 21.f, BarW + 4.f, 10.f);
+			DrawRect(StaminaTone, BX, HY + 23.f, BarW * Player->GetStaminaRatio(), 6.f);
+
 			static const TCHAR* StageNames[] = { TEXT("Искра"), TEXT("Скелет"), TEXT("Плоть") };
-			DrawText(StageNames[static_cast<int32>(Player->GetStage())], TextDim, BX, HY + 22.f, Small, 0.8f);
+			DrawText(StageNames[static_cast<int32>(Player->GetStage())], TextDim, BX, HY + 34.f, Small, 0.8f);
 		}
 
 		// ---- Bottom-left: round "relic" slot = the Spark's emblem, count = rune-keys found.
