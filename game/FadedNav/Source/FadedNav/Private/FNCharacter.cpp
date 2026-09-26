@@ -7,6 +7,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PointLightComponent.h"
+#include "EngineUtils.h"
+#include "FNGameMode.h"
+#include "FNVysiGreybox.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
@@ -66,6 +70,22 @@ AFNCharacter::AFNCharacter()
 	Health = CreateDefaultSubobject<UFNHealthComponent>(TEXT("Health"));
 	Health->MaxHealth = 100.f;
 
+	// Spark form: a plasma ember with its own light (the only neon allowed: style_v0.1).
+	SparkOrb = MakePart(TEXT("SparkOrb"), Sphere.Object, FVector(0.f, 0.f, 20.f), FVector(0.45f));
+	SparkOrb->SetCastShadow(false);
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMat(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	if (ShapeMat.Succeeded())
+	{
+		SparkOrb->SetMaterial(0, ShapeMat.Object); // the engine sphere ships with a grid material without a Color parameter
+		Head->SetMaterial(0, ShapeMat.Object);
+	}
+	SparkLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("SparkLight"));
+	SparkLight->SetupAttachment(SparkOrb);
+	SparkLight->SetLightColor(FLinearColor(0.35f, 0.9f, 1.f));
+	SparkLight->SetAttenuationRadius(900.f);
+	SparkLight->SetIntensity(30000.f);
+	SparkLight->SetCastShadows(false);
+
 	// Temporary visuals: Paragon Wraith (Epic, free for UE projects — see docs/tech/assets_licenses.csv).
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> WraithMesh(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Meshes/Wraith.Wraith"));
 	static ConstructorHelpers::FClassFinder<UAnimInstance> WraithAnim(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Wraith_AnimBlueprint"));
@@ -95,6 +115,23 @@ void AFNCharacter::BeginPlay()
 	DefaultWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
 	Health->OnDeath.AddDynamic(this, &AFNCharacter::HandleDeath);
 	LastSafeLocation = GetActorLocation();
+	Checkpoint = GetActorLocation();
+	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.15f, 0.75f, 1.f)); }
+
+	// The chapter starts as a Spark; the flat boss arena (?Arena) starts as full Flesh with the rifle.
+	bool bChapter = false;
+	for (TActorIterator<AFNVysiGreybox> It(GetWorld()); It; ++It) { bChapter = true; break; }
+	if (bChapter)
+	{
+		SetStage(EFNStage::Spark, false);
+		ShowMessage(TEXT("You are a Spark. Five kills to take shape."));
+	}
+	else
+	{
+		SetStage(EFNStage::Flesh, false);
+		bHasRifle = true;
+		Weapon = EFNWeapon::Rifle;
+	}
 
 	const FLinearColor Flesh(0.55f, 0.5f, 0.45f);
 	for (UStaticMeshComponent* C : { Body.Get(), Head.Get() })
@@ -149,6 +186,12 @@ void AFNCharacter::BuildInput()
 	Mapping->MapKey(ReloadAction, EKeys::R);
 	Mapping->MapKey(MeleeAction, EKeys::F);
 	Mapping->MapKey(RestartAction, EKeys::Enter);
+	Weapon1Action = MakeAction(EInputActionValueType::Boolean);
+	Weapon2Action = MakeAction(EInputActionValueType::Boolean);
+	Weapon3Action = MakeAction(EInputActionValueType::Boolean);
+	Mapping->MapKey(Weapon1Action, EKeys::One);
+	Mapping->MapKey(Weapon2Action, EKeys::Two);
+	Mapping->MapKey(Weapon3Action, EKeys::Three);
 }
 
 void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -179,6 +222,9 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	Input->BindAction(ReloadAction, ETriggerEvent::Started, this, &AFNCharacter::OnReload);
 	Input->BindAction(MeleeAction, ETriggerEvent::Started, this, &AFNCharacter::OnMelee);
 	Input->BindAction(RestartAction, ETriggerEvent::Started, this, &AFNCharacter::OnRestart);
+	Input->BindAction(Weapon1Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon1);
+	Input->BindAction(Weapon2Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon2);
+	Input->BindAction(Weapon3Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon3);
 }
 
 void AFNCharacter::OnMove(const FInputActionValue& Value)
@@ -217,29 +263,49 @@ void AFNCharacter::OnRoll()
 	RollDirection.Z = 0.f;
 	RollDirection.Normalize();
 
+	if (Stage == EFNStage::Spark)
+	{
+		// Blink: teleport forward up to 6 m, stopping at obstacles.
+		const FVector From = GetActorLocation();
+		const FVector To = From + RollDirection * 600.f;
+		FHitResult Hit;
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(FNBlink), false, this);
+		const bool bBlocked = GetWorld()->SweepSingleByChannel(Hit, From, To, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(35.f), Q);
+		SetActorLocation(bBlocked ? Hit.Location : To, false, nullptr, ETeleportType::TeleportPhysics);
+		DrawDebugLine(GetWorld(), From, GetActorLocation(), FColor(90, 230, 255), false, 0.2f, 0, 4.f);
+		IFramesRemaining = 0.2f;
+		Health->bInvulnerable = true;
+		return;
+	}
+
 	bRolling = true;
-	RollRemaining = RollDuration;
-	IFramesRemaining = RollIFrames;
+	RollRemaining = CurRollDuration;
+	IFramesRemaining = CurRollIFrames;
 	Health->bInvulnerable = true;
 	bWantsFire = false;
 }
 
 void AFNCharacter::OnReload()
 {
-	if (bDead || bReloading || Ammo >= MagazineSize || Reserve <= 0)
+	if (bDead || bReloading || Reserve <= 0 || Weapon == EFNWeapon::Plasma)
+	{
+		return;
+	}
+	if ((Weapon == EFNWeapon::Rifle && Ammo >= MagazineSize) || (Weapon == EFNWeapon::Scatter && ScatterAmmo >= 6))
 	{
 		return;
 	}
 	bReloading = true;
-	ReloadRemaining = ReloadTime;
+	ReloadRemaining = Weapon == EFNWeapon::Scatter ? 1.2f : ReloadTime;
 }
 
 void AFNCharacter::FinishReload()
 {
 	bReloading = false;
-	const int32 Needed = MagazineSize - Ammo;
-	const int32 Taken = FMath::Min(Needed, Reserve);
-	Ammo += Taken;
+	int32& Mag = Weapon == EFNWeapon::Scatter ? ScatterAmmo : Ammo;
+	const int32 Size = Weapon == EFNWeapon::Scatter ? 6 : MagazineSize;
+	const int32 Taken = FMath::Min(Size - Mag, Reserve);
+	Mag += Taken;
 	Reserve -= Taken;
 }
 
@@ -260,44 +326,68 @@ float AFNCharacter::GetTimeSinceHit() const
 
 void AFNCharacter::FireShot()
 {
-	if (Ammo <= 0)
+	switch (Weapon)
 	{
-		OnReload();
+	case EFNWeapon::Plasma:
+		// Weak energy bolt, no ammo (Spark/Skeleton before the first weapon).
+		FireCooldown = 0.28f;
+		FireTrace(10.f, 1.5f, 3000.f, FColor(90, 230, 255));
 		return;
-	}
-	--Ammo;
-	FireCooldown = FireInterval;
 
-	if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-	{
-		if (FireMontage && !Anim->Montage_IsPlaying(FireMontage))
+	case EFNWeapon::Scatter:
+		if (ScatterAmmo <= 0) { OnReload(); return; }
+		--ScatterAmmo;
+		FireCooldown = 0.75f;
+		for (int32 i = 0; i < 8; ++i)
 		{
-			Anim->Montage_Play(FireMontage, 2.5f);
+			FireTrace(9.f, 6.f, 2500.f, FColor(255, 190, 90));
+		}
+		break;
+
+	case EFNWeapon::Rifle:
+	default:
+		if (Ammo <= 0) { OnReload(); return; }
+		--Ammo;
+		FireCooldown = FireInterval;
+		FireTrace(ShotDamage, bAiming ? AimSpreadDeg : HipSpreadDeg, 20000.f, FColor(255, 190, 90));
+		break;
+	}
+
+	if (Stage == EFNStage::Flesh)
+	{
+		if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
+		{
+			if (FireMontage && !Anim->Montage_IsPlaying(FireMontage))
+			{
+				Anim->Montage_Play(FireMontage, 2.5f);
+			}
 		}
 	}
+}
 
+void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const FColor& Tracer)
+{
 	FVector ViewLoc;
 	FRotator ViewRot;
 	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
 
-	const float Spread = FMath::DegreesToRadians(bAiming ? AimSpreadDeg : HipSpreadDeg);
-	const FVector Dir = FMath::VRandCone(ViewRot.Vector(), Spread);
-	const FVector End = ViewLoc + Dir * 20000.f;
+	const FVector Dir = FMath::VRandCone(ViewRot.Vector(), FMath::DegreesToRadians(SpreadDeg));
+	const FVector End = ViewLoc + Dir * Range;
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(FNShot), false, this);
 	FHitResult Hit;
 	const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, End, ECC_Visibility, Params);
 
-	const FVector Muzzle = Gun->GetComponentLocation() + GetActorForwardVector() * 50.f;
+	const FVector Muzzle = Stage == EFNStage::Spark ? SparkOrb->GetComponentLocation() : Gun->GetComponentLocation() + GetActorForwardVector() * 50.f;
 	const FVector Impact = bHit ? Hit.ImpactPoint : End;
-	DrawDebugLine(GetWorld(), Muzzle, Impact, FColor(255, 190, 90), false, 0.05f, 0, 1.2f);
+	DrawDebugLine(GetWorld(), Muzzle, Impact, Tracer, false, 0.05f, 0, 1.2f);
 
 	if (bHit && Hit.GetActor())
 	{
 		if (UFNHealthComponent* TargetHealth = Hit.GetActor()->FindComponentByClass<UFNHealthComponent>())
 		{
 			const bool bWeak = Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(TEXT("WeakPoint"));
-			if (TargetHealth->ApplyDamage(ShotDamage * (bWeak ? WeakPointMultiplier : 1.f), this) > 0.f)
+			if (TargetHealth->ApplyDamage(Damage * (bWeak ? WeakPointMultiplier : 1.f), this) > 0.f)
 			{
 				LastHitTime = GetWorld()->GetTimeSeconds();
 				bLastHitWeak = bWeak;
@@ -307,9 +397,128 @@ void AFNCharacter::FireShot()
 	}
 }
 
+void AFNCharacter::SelectWeapon(EFNWeapon W)
+{
+	if (bDead || Stage == EFNStage::Spark || bReloading)
+	{
+		return;
+	}
+	if ((W == EFNWeapon::Rifle && !bHasRifle) || (W == EFNWeapon::Scatter && !bHasScatter))
+	{
+		return;
+	}
+	Weapon = W;
+}
+
+void AFNCharacter::GiveWeapon(EFNWeapon NewWeapon)
+{
+	if (NewWeapon == EFNWeapon::Rifle) { bHasRifle = true; ShowMessage(TEXT("Rifle found  [2]")); }
+	if (NewWeapon == EFNWeapon::Scatter) { bHasScatter = true; ShowMessage(TEXT("Scattergun found  [3]")); }
+	if (Stage != EFNStage::Spark)
+	{
+		Weapon = NewWeapon;
+	}
+}
+
+void AFNCharacter::GiveArmor(float Bonus)
+{
+	ArmorBonus += Bonus;
+	Health->MaxHealth += Bonus;
+	Health->Health = FMath::Min(Health->MaxHealth, Health->Health + Bonus);
+	ShowMessage(FString::Printf(TEXT("Armour +%.0f HP"), Bonus));
+}
+
+void AFNCharacter::RestAtTreba(const FVector& At)
+{
+	Checkpoint = At;
+	Health->Health = Health->MaxHealth;
+	Stamina = MaxStamina;
+	Reserve = FMath::Max(Reserve, 72);
+	ShowMessage(TEXT("Treba: rested. You will return here."));
+}
+
+void AFNCharacter::ShowMessage(const FString& Text)
+{
+	Message = Text;
+	MessageTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+}
+
+float AFNCharacter::GetMessageAge() const
+{
+	return GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds() - MessageTime) : 100.f;
+}
+
+void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
+{
+	Stage = NewStage;
+	const bool bHasSkin = GetMesh()->GetSkeletalMeshAsset() != nullptr;
+
+	float BaseHealth = 100.f;
+	float Speed = 500.f;
+	switch (Stage)
+	{
+	case EFNStage::Spark:
+		BaseHealth = 20.f; Speed = 650.f;
+		Weapon = EFNWeapon::Plasma;
+		break;
+	case EFNStage::Skeleton:
+		BaseHealth = 50.f; Speed = 540.f;
+		CurRollSpeed = 1700.f; CurRollDuration = 0.28f; CurRollIFrames = 0.12f;
+		if (bHasRifle) { Weapon = EFNWeapon::Rifle; }
+		break;
+	case EFNStage::Flesh:
+		BaseHealth = 100.f; Speed = 500.f;
+		CurRollSpeed = RollSpeed; CurRollDuration = RollDuration; CurRollIFrames = RollIFrames;
+		if (bHasRifle && Weapon == EFNWeapon::Plasma) { Weapon = EFNWeapon::Rifle; }
+		break;
+	}
+
+	// Visuals: ember -> pale bone frame -> full body.
+	SparkOrb->SetVisibility(Stage == EFNStage::Spark, true);
+	GetMesh()->SetVisibility(Stage == EFNStage::Flesh && bHasSkin);
+	const bool bFrame = Stage == EFNStage::Skeleton || (Stage == EFNStage::Flesh && !bHasSkin);
+	Body->SetVisibility(bFrame);
+	Head->SetVisibility(bFrame);
+	if (Stage == EFNStage::Skeleton)
+	{
+		Body->SetRelativeScale3D(FVector(0.3f, 0.3f, 1.6f));
+		for (UStaticMeshComponent* C : { Body.Get(), Head.Get() })
+		{
+			if (UMaterialInstanceDynamic* MID = C->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.85f, 0.82f, 0.72f)); }
+		}
+	}
+
+	Health->MaxHealth = BaseHealth + ArmorBonus;
+	Health->Health = Health->MaxHealth;
+	GetCharacterMovement()->MaxWalkSpeed = Speed;
+	DefaultWalkSpeed = Speed;
+
+	if (bAnnounce)
+	{
+		Health->bInvulnerable = true;
+		IFramesRemaining = 1.5f;
+		ShowMessage(Stage == EFNStage::Skeleton ? TEXT("The Spark gathers bones.  (dash)") : TEXT("Flesh returns.  (roll, melee, full health)"));
+	}
+}
+
+void AFNCharacter::Revive()
+{
+	bDead = false;
+	bDiedInArena = false;
+	RespawnTimer = -1.f;
+	SetActorLocation(Checkpoint, false, nullptr, ETeleportType::ResetPhysics);
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+	Body->SetRelativeRotation(FRotator::ZeroRotator);
+	SetStage(Stage, false);
+	Stamina = MaxStamina;
+	LastSafeLocation = Checkpoint;
+	ShowMessage(TEXT("The Spark rekindles."));
+}
+
 void AFNCharacter::OnMelee()
 {
-	if (bDead || bRolling || Stamina < MeleeCost)
+	if (bDead || bRolling || Stamina < MeleeCost || Stage == EFNStage::Spark)
 	{
 		return;
 	}
@@ -352,6 +561,11 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 	bDead = true;
 	bWantsFire = false;
 	bRolling = false;
+	// On the exam arena (or the flat test arena) a fall is an exam outcome; elsewhere the Spark returns to the treba.
+	bool bChapter = false;
+	for (TActorIterator<AFNVysiGreybox> It(GetWorld()); It; ++It) { bChapter = true; break; }
+	bDiedInArena = !bChapter || FVector::Dist2D(GetActorLocation(), AFNVysiGreybox::ArenaCenter()) < 2600.f;
+	RespawnTimer = bDiedInArena ? -1.f : 3.f;
 	GetCharacterMovement()->DisableMovement();
 	if (DeathAnim && GetMesh()->GetSkeletalMeshAsset())
 	{
@@ -369,7 +583,27 @@ void AFNCharacter::Tick(float DeltaSeconds)
 
 	if (bDead)
 	{
+		if (RespawnTimer > 0.f)
+		{
+			RespawnTimer -= DeltaSeconds;
+			if (RespawnTimer <= 0.f)
+			{
+				Revive();
+			}
+		}
 		return;
+	}
+
+	// Evolution by kills (Spark -> Skeleton -> Flesh).
+	if (const AFNGameMode* GM = GetWorld()->GetAuthGameMode<AFNGameMode>())
+	{
+		if (Stage == EFNStage::Spark && GM->GetKills() >= KillsToSkeleton) { SetStage(EFNStage::Skeleton, true); }
+		else if (Stage == EFNStage::Skeleton && GM->GetKills() >= KillsToFlesh) { SetStage(EFNStage::Flesh, true); }
+	}
+	if (IFramesRemaining > 0.f && !bRolling)
+	{
+		IFramesRemaining -= DeltaSeconds;
+		if (IFramesRemaining <= 0.f) { Health->bInvulnerable = false; }
 	}
 
 	// Grey-box safety net: remember safe ground, return there after falling off the path.
@@ -391,7 +625,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 		RollRemaining -= DeltaSeconds;
 		IFramesRemaining -= DeltaSeconds;
 		const FVector V = GetCharacterMovement()->Velocity;
-		GetCharacterMovement()->Velocity = FVector(RollDirection.X * RollSpeed, RollDirection.Y * RollSpeed, V.Z);
+		GetCharacterMovement()->Velocity = FVector(RollDirection.X * CurRollSpeed, RollDirection.Y * CurRollSpeed, V.Z);
 		if (IFramesRemaining <= 0.f)
 		{
 			Health->bInvulnerable = false;

@@ -12,6 +12,8 @@
 #include "FNCharacter.h"
 #include "FNHUD.h"
 #include "FNMob.h"
+#include "FNPickup.h"
+#include "FNTreba.h"
 #include "FNPerunBoss.h"
 #include "FNVysiGreybox.h"
 #include "Kismet/GameplayStatics.h"
@@ -121,6 +123,7 @@ void AFNGameMode::BuildArena()
 			Level->Build(Sun);
 		}
 		SpawnChapterMobs();
+		SpawnChapterItems();
 		// Stands in the centre with his back to the entrance.
 		World->SpawnActor<AFNPerunBoss>(AFNVysiGreybox::ArenaCenter() + FVector(300.f, 0.f, 200.f), FRotator(0.f, 0.f, 0.f), Params);
 	}
@@ -129,6 +132,42 @@ void AFNGameMode::BuildArena()
 void AFNGameMode::NotifyMobKilled(AFNMob* /*Mob*/)
 {
 	++Kills;
+}
+
+void AFNGameMode::SpawnChapterItems()
+{
+	// slice_v1 / vysi_layout §3: rifle at the Oath Stone; scattergun + 2 armour in the Bucket Row shed; one treba.
+	UWorld* World = GetWorld();
+	constexpr float M = 100.f;
+	auto Ground = [World](float X, float Y) -> FVector
+	{
+		FHitResult Hit;
+		const FVector Top(X * M, Y * M, 500.f * M), Bottom(X * M, Y * M, -100.f * M);
+		if (World->LineTraceSingleByChannel(Hit, Top, Bottom, ECC_WorldStatic, FCollisionQueryParams(SCENE_QUERY_STAT(FNItemGround), false)))
+		{
+			return Hit.ImpactPoint;
+		}
+		return FVector(X * M, Y * M, 0.f);
+	};
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	struct FItem { float X; float Y; EFNPickupType Type; };
+	const FItem Items[] = {
+		{ 158.f, 36.f, EFNPickupType::Rifle },
+		{ 514.f, 56.f, EFNPickupType::Scatter },
+		{ 514.f, 62.f, EFNPickupType::Armor },
+		{ 517.f, 66.f, EFNPickupType::Armor },
+	};
+	for (const FItem& It : Items)
+	{
+		if (AFNPickup* P = World->SpawnActorDeferred<AFNPickup>(AFNPickup::StaticClass(), FTransform(Ground(It.X, It.Y) + FVector(0.f, 0.f, 90.f)), nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn))
+		{
+			P->InitType(It.Type);
+			P->FinishSpawning(FTransform(Ground(It.X, It.Y) + FVector(0.f, 0.f, 90.f)));
+		}
+	}
+	World->SpawnActor<AFNTreba>(Ground(645.f, 10.f) + FVector(0.f, 0.f, 250.f), FRotator::ZeroRotator, Params);
 }
 
 void AFNGameMode::SpawnChapterMobs()

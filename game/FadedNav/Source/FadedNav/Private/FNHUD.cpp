@@ -67,13 +67,27 @@ void AFNHUD::DrawHUD()
 		DrawText(TEXT("ST"), FLinearColor::White, 40.f, H - 64.f, Small);
 		DrawBar(70.f, H - 62.f, 320.f, 8.f, Player->GetStaminaRatio(), FLinearColor(0.75f, 0.7f, 0.4f));
 
-		// Ammo
-		const FString AmmoText = Player->IsReloading()
-			? FString(TEXT("RELOADING"))
-			: FString::Printf(TEXT("%d / %d"), Player->GetAmmo(), Player->GetReserve());
+		// Ammo per weapon
+		FString AmmoText;
+		if (Player->IsReloading()) { AmmoText = TEXT("RELOADING"); }
+		else if (Player->GetWeapon() == EFNWeapon::Plasma) { AmmoText = TEXT("PLASMA"); }
+		else if (Player->GetWeapon() == EFNWeapon::Scatter) { AmmoText = FString::Printf(TEXT("%d / %d"), Player->GetScatterAmmo(), Player->GetReserve()); }
+		else { AmmoText = FString::Printf(TEXT("%d / %d"), Player->GetAmmo(), Player->GetReserve()); }
 		DrawText(AmmoText, FLinearColor(1.f, 0.85f, 0.5f), W - 220.f, H - 90.f, Medium, 1.4f);
 
-		// Kill counter (drives the Spark -> Skeleton -> Flesh evolution next).
+		// Stage and weapon
+		static const TCHAR* StageNames[] = { TEXT("SPARK"), TEXT("SKELETON"), TEXT("FLESH") };
+		static const TCHAR* WeaponNames[] = { TEXT("plasma [1]"), TEXT("rifle [2]"), TEXT("scattergun [3]") };
+		DrawText(FString::Printf(TEXT("%s  |  %s"), StageNames[static_cast<int32>(Player->GetStage())], WeaponNames[static_cast<int32>(Player->GetWeapon())]),
+			FLinearColor(0.85f, 0.9f, 1.f), 40.f, H - 120.f, Small);
+
+		// Short event messages (evolution, pickups, treba).
+		if (Player->GetMessageAge() < 3.5f && !Player->GetMessage().IsEmpty())
+		{
+			DrawCentered(Player->GetMessage(), H * 0.22f, FLinearColor(1.f, 0.9f, 0.7f), 0.9f);
+		}
+
+		// Kill counter (drives the Spark -> Skeleton -> Flesh evolution).
 		if (const AFNGameMode* GM = GetWorld()->GetAuthGameMode<AFNGameMode>())
 		{
 			DrawText(FString::Printf(TEXT("KILLS %d"), GM->GetKills()), FLinearColor(0.8f, 0.8f, 0.8f), W - 220.f, H - 130.f, Small);
@@ -88,7 +102,11 @@ void AFNHUD::DrawHUD()
 	}
 
 	// Exam outcomes (GDD §9): both are full results.
-	if (Player && Player->IsDead())
+	if (Player && Player->IsDead() && !Player->IsExamDefeat())
+	{
+		DrawCentered(TEXT("The Spark gutters..."), H * 0.4f, FLinearColor(0.7f, 0.9f, 1.f), 1.1f);
+	}
+	else if (Player && Player->IsExamDefeat())
 	{
 		const bool bNear = Boss && Boss->GetHealth()->GetRatio() <= NearWinRatio;
 		DrawCentered(TEXT("The mentor stops the fight."), H * 0.38f, FLinearColor(0.95f, 0.9f, 0.8f), 1.2f);

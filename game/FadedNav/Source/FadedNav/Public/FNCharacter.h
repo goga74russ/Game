@@ -12,7 +12,14 @@ class UInputAction;
 class UInputMappingContext;
 class UFNHealthComponent;
 
-// Tech-test hero ("Flesh" stage): over-the-shoulder camera, hitscan rifle, roll with i-frames, melee.
+// Evolution stages of the hero in the Yav chapter (GDD §4): kills drive Spark -> Skeleton -> Flesh.
+UENUM()
+enum class EFNStage : uint8 { Spark, Skeleton, Flesh };
+
+UENUM()
+enum class EFNWeapon : uint8 { Plasma, Rifle, Scatter };
+
+// Hero: Spark (plasma, blink) -> Skeleton (dash) -> Flesh (roll, full kit): over-the-shoulder camera, hitscan rifle, roll with i-frames, melee.
 UCLASS()
 class FADEDNAV_API AFNCharacter : public ACharacter
 {
@@ -36,6 +43,22 @@ public:
 	bool IsAiming() const { return bAiming; }
 	float GetTimeSinceHit() const;
 	bool WasLastHitWeak() const { return bLastHitWeak; }
+
+	EFNStage GetStage() const { return Stage; }
+	EFNWeapon GetWeapon() const { return Weapon; }
+	int32 GetScatterAmmo() const { return ScatterAmmo; }
+	void GiveWeapon(EFNWeapon NewWeapon);
+	void GiveArmor(float Bonus);
+	void RestAtTreba(const FVector& At);    // heal, refill, set respawn point
+	bool IsExamDefeat() const { return bDead && bDiedInArena; }
+	float GetRespawnRemaining() const { return RespawnTimer; }
+	const FString& GetMessage() const { return Message; }
+	float GetMessageAge() const;
+	void ShowMessage(const FString& Text);
+
+	// Kills needed for each evolution step (GDD §4: ~5 per stage [D]).
+	UPROPERTY(EditAnywhere, Category = "Evolution") int32 KillsToSkeleton = 5;
+	UPROPERTY(EditAnywhere, Category = "Evolution") int32 KillsToFlesh = 10;
 
 	// --- Tunables [D] = placeholder until playtest ---
 	UPROPERTY(EditAnywhere, Category = "Weapon") float ShotDamage = 25.f;
@@ -67,6 +90,8 @@ protected:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Head;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> Gun;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UFNHealthComponent> Health;
+	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SparkOrb;
+	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPointLightComponent> SparkLight;
 
 	UPROPERTY() TObjectPtr<class UAnimMontage> FireMontage;
 	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
@@ -81,6 +106,9 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> ReloadAction;
 	UPROPERTY() TObjectPtr<UInputAction> MeleeAction;
 	UPROPERTY() TObjectPtr<UInputAction> RestartAction;
+	UPROPERTY() TObjectPtr<UInputAction> Weapon1Action;
+	UPROPERTY() TObjectPtr<UInputAction> Weapon2Action;
+	UPROPERTY() TObjectPtr<UInputAction> Weapon3Action;
 
 private:
 	void BuildInput();
@@ -97,6 +125,13 @@ private:
 	void OnRestart();
 
 	void FireShot();
+	void FireTrace(float Damage, float SpreadDeg, float Range, const FColor& Tracer);
+	void SelectWeapon(EFNWeapon W);
+	void OnWeapon1() { SelectWeapon(EFNWeapon::Plasma); }
+	void OnWeapon2() { SelectWeapon(EFNWeapon::Rifle); }
+	void OnWeapon3() { SelectWeapon(EFNWeapon::Scatter); }
+	void SetStage(EFNStage NewStage, bool bAnnounce);
+	void Revive();
 	void FinishReload();
 
 	UFUNCTION() void HandleDeath(AActor* Killer);
@@ -125,4 +160,19 @@ private:
 	float DefaultWalkSpeed = 500.f;
 	FVector LastSafeLocation = FVector::ZeroVector;
 	float SafeTimer = 0.f;
+
+	EFNStage Stage = EFNStage::Spark;
+	EFNWeapon Weapon = EFNWeapon::Plasma;
+	bool bHasRifle = false;
+	bool bHasScatter = false;
+	int32 ScatterAmmo = 6;
+	float ArmorBonus = 0.f;
+	float CurRollSpeed = 1500.f;
+	float CurRollDuration = 0.5f;
+	float CurRollIFrames = 0.35f;
+	FVector Checkpoint = FVector::ZeroVector;
+	bool bDiedInArena = false;
+	float RespawnTimer = -1.f;
+	FString Message;
+	double MessageTime = -100.0;
 };

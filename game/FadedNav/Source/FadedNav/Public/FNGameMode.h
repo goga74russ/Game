@@ -23,6 +23,7 @@ public:
 private:
 	void BuildArena();
 	void SpawnChapterMobs();
+	void SpawnChapterItems();
 
 	int32 Kills = 0;
 
