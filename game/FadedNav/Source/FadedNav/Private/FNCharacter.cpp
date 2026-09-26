@@ -10,6 +10,7 @@
 #include "Components/PointLightComponent.h"
 #include "EngineUtils.h"
 #include "FNGameMode.h"
+#include "FNPerunBoss.h"
 #include "FNSkillTree.h"
 #include "Kismet/GameplayStatics.h"
 #include "FNVysiGreybox.h"
@@ -87,7 +88,7 @@ AFNCharacter::AFNCharacter()
 	SparkLight->SetRelativeLocation(FVector(0.f, 0.f, 30.f));
 	SparkLight->SetLightColor(SparkColor);
 	SparkLight->SetAttenuationRadius(900.f);
-	SparkLight->SetIntensity(30000.f);
+	SparkLight->SetIntensity(12000.f);
 	SparkLight->SetCastShadows(false);
 
 	// Temporary visuals: Paragon Wraith (Epic, free for UE projects — see docs/tech/assets_licenses.csv).
@@ -397,6 +398,13 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 	const FVector Impact = bHit ? Hit.ImpactPoint : End;
 	DrawDebugLine(GetWorld(), Muzzle, Impact, Tracer, false, 0.05f, 0, 1.2f);
 
+	if (bHit && Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(TEXT("ParryPoint")))
+	{
+		if (AFNPerunBoss* Boss = Cast<AFNPerunBoss>(Hit.GetActor()))
+		{
+			Boss->TryParry();
+		}
+	}
 	if (bHit && Hit.GetActor())
 	{
 		if (UFNHealthComponent* TargetHealth = Hit.GetActor()->FindComponentByClass<UFNHealthComponent>())
@@ -489,8 +497,9 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 	}
 
 	// Glow fades with the evolution: bright plasma -> dim ember in the bones -> none (GDD §4).
-	SparkLight->SetIntensity(Stage == EFNStage::Spark ? 30000.f : (Stage == EFNStage::Skeleton ? 4000.f : 0.f));
-	SparkLight->SetVisibility(Stage != EFNStage::Flesh);
+	SparkLight->SetIntensity(Stage == EFNStage::Spark ? 12000.f : (Stage == EFNStage::Skeleton ? 4000.f : (bHasTrace ? 2500.f : 0.f)));
+	SparkLight->SetLightColor(Stage == EFNStage::Flesh && bHasTrace ? FLinearColor(0.8f, 0.85f, 0.95f) : SparkColor);
+	SparkLight->SetVisibility(Stage != EFNStage::Flesh || bHasTrace);
 
 	// Visuals: ember -> pale bone frame -> full body.
 	SparkOrb->SetVisibility(Stage == EFNStage::Spark, true);
@@ -592,6 +601,20 @@ void AFNCharacter::ToggleTree()
 	}
 }
 
+void AFNCharacter::ReviveAt(const FVector& At)
+{
+	Checkpoint = At;
+	Revive();
+	MessageTime = -100.0; // no "rekindles" line after the exam
+}
+
+void AFNCharacter::GiveTrace()
+{
+	bHasTrace = true;
+	SetStage(Stage, false);
+	ShowMessage(TEXT("След наставника: серебряный отсвет (без силы)"));
+}
+
 void AFNCharacter::Revive()
 {
 	bDead = false;
@@ -660,6 +683,13 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 	for (TActorIterator<AFNVysiGreybox> It(GetWorld()); It; ++It) { bChapter = true; break; }
 	bDiedInArena = !bChapter || FVector::Dist2D(GetActorLocation(), AFNVysiGreybox::ArenaCenter()) < 2600.f;
 	RespawnTimer = bDiedInArena ? -1.f : 3.f;
+	if (bDiedInArena)
+	{
+		for (TActorIterator<AFNPerunBoss> It(GetWorld()); It; ++It)
+		{
+			It->OnPlayerFell(this);
+		}
+	}
 	GetCharacterMovement()->DisableMovement();
 	if (DeathAnim && GetMesh()->GetSkeletalMeshAsset())
 	{

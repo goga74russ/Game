@@ -14,6 +14,8 @@
 #include "Engine/TextRenderActor.h"
 #include "EngineUtils.h"
 #include "FNCharacter.h"
+#include "FNHealthComponent.h"
+#include "FNPerunBoss.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/PlayerController.h"
 #include "HighResScreenshot.h"
@@ -362,6 +364,42 @@ void AFNVysiGreybox::SetupAtmosphere()
 void AFNVysiGreybox::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// "-AutoExam": scripted walk through the exam (intro -> phase 2 -> outcome A -> epilogue -> end card) with screenshots.
+	if (FParse::Param(FCommandLine::Get(), TEXT("AutoExam")))
+	{
+		const float T = GetWorld()->GetRealTimeSeconds();
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		AFNCharacter* Hero = PC ? Cast<AFNCharacter>(PC->GetPawn()) : nullptr;
+		AFNPerunBoss* Boss = nullptr;
+		for (TActorIterator<AFNPerunBoss> It(GetWorld()); It; ++It) { Boss = *It; break; }
+		auto Shot = [this](int32 Step, const TCHAR* Name)
+		{
+			if (ExamStep < Step)
+			{
+				ExamStep = Step;
+				FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString(Name) + TEXT(".png"), false, false);
+			}
+		};
+		if (Hero && Boss)
+		{
+			if (T > 14.f && ExamStep < 1) { ExamStep = 1; Hero->SetActorLocation(FVector(704.f, -6.f, 92.f) * M, false, nullptr, ETeleportType::TeleportPhysics); PC->SetControlRotation(FRotator(-8.f, 15.f, 0.f)); }
+			if (T > 18.f) { Shot(2, TEXT("10_exam_intro")); }
+			if (T > 21.f && ExamStep < 3) { ExamStep = 3; Boss->GetHealth()->ApplyDamage(Boss->GetHealth()->MaxHealth * 0.36f, nullptr); }
+			if (T > 22.5f) { Shot(4, TEXT("11_exam_phase2")); }
+			if (T > 26.f && ExamStep < 5) { ExamStep = 5; Hero->GetHealth()->bInvulnerable = false; Hero->GetHealth()->ApplyDamage(99999.f, nullptr); }
+			if (T > 28.f) { Shot(6, TEXT("12_exam_stopped")); }
+			if (T > 37.f && ExamStep < 7) { ExamStep = 7; Hero->SetActorLocation(FVector(855.f, 2.f, 121.f) * M, false, nullptr, ETeleportType::TeleportPhysics); PC->SetControlRotation(FRotator(-5.f, 10.f, 0.f)); }
+			if (T > 41.5f && ExamStep < 8)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("FNEXAM boss=%s hero=%s dead=%d"), *Boss->GetActorLocation().ToString(), *Hero->GetActorLocation().ToString(), Hero->IsDead() ? 1 : 0);
+			}
+			if (T > 41.5f) { Shot(8, TEXT("13_exam_epilogue")); }
+			if (T > 47.f) { Shot(9, TEXT("14_end_card")); }
+			if (T > 49.f) { PC->ConsoleCommand(TEXT("quit")); }
+		}
+		return;
+	}
 
 	// "-AutoShot": fly through key viewpoints, save screenshots to Saved/Screenshots, then quit (for remote review).
 	if (FParse::Param(FCommandLine::Get(), TEXT("AutoShot")))

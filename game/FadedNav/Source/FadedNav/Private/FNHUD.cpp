@@ -182,29 +182,32 @@ void AFNHUD::DrawHUD()
 		}
 	}
 
-	if (Boss)
+	if (Boss && Boss->IsFightActive())
 	{
 		const float BW = W * 0.5f;
-		DrawCentered(TEXT("PERUN - MENTOR"), 40.f, FLinearColor(0.9f, 0.85f, 0.75f), 0.8f);
+		DrawCentered(FString::Printf(TEXT("ПЕРУН — НАСТАВНИК   фаза %d"), Boss->GetPhase()), 40.f, FLinearColor(0.9f, 0.85f, 0.75f), 0.8f);
 		DrawBar((W - BW) * 0.5f, 78.f, BW, 12.f, Boss->GetHealth()->GetRatio(), FLinearColor(0.55f, 0.5f, 0.85f));
 	}
 
-	// Exam outcomes (GDD §9): both are full results.
+	// Spark returning to the treba (deaths outside the arena).
 	if (Player && Player->IsDead() && !Player->IsExamDefeat())
 	{
-		DrawCentered(TEXT("The Spark gutters..."), H * 0.4f, FLinearColor(0.7f, 0.9f, 1.f), 1.1f);
+		DrawCentered(TEXT("Искра гаснет…"), H * 0.4f, FLinearColor(0.7f, 0.9f, 1.f), 1.1f);
 	}
-	else if (Player && Player->IsExamDefeat())
+
+	// Exam dialogue subtitles (both outcomes and the epilogue are carried by Perun's lines).
+	if (Boss && Boss->HasSubtitle())
 	{
-		const bool bNear = Boss && Boss->GetHealth()->GetRatio() <= NearWinRatio;
-		DrawCentered(TEXT("The mentor stops the fight."), H * 0.38f, FLinearColor(0.95f, 0.9f, 0.8f), 1.2f);
-		DrawCentered(bNear ? TEXT("\"You almost had me. Come back stronger.\"") : TEXT("\"Not yet. Learn the storm first.\""),
-			H * 0.45f, FLinearColor(0.8f, 0.8f, 0.8f), 0.9f);
-		DrawCentered(TEXT("Press Enter to try again"), H * 0.55f, FLinearColor(0.7f, 0.7f, 0.7f), 0.7f);
+		const FString Line = FString::Printf(TEXT("%s: %s"), *Boss->GetSubtitleSpeaker(), *Boss->GetSubtitle());
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), W * 0.12f, H * 0.78f, W * 0.76f, 44.f);
+		DrawCentered(Line, H * 0.78f + 10.f, FLinearColor(1.f, 0.95f, 0.85f), 0.8f);
 	}
-	else if (Boss && Boss->IsDead())
+
+	// End of the demo chapter.
+	if (Boss && Boss->ShowEndCard())
 	{
-		DrawCentered(TEXT("You surpassed your mentor."), H * 0.38f, FLinearColor(1.f, 0.85f, 0.5f), 1.2f);
-		DrawCentered(TEXT("Press Enter to restart"), H * 0.55f, FLinearColor(0.7f, 0.7f, 0.7f), 0.7f);
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), 0.f, H * 0.35f, W, H * 0.25f);
+		DrawCentered(TEXT("ПРОДОЛЖЕНИЕ СЛЕДУЕТ"), H * 0.4f, FLinearColor(0.85f, 0.9f, 1.f), 1.6f);
+		DrawCentered(TEXT("Enter — начать заново"), H * 0.5f, FLinearColor(0.7f, 0.7f, 0.7f), 0.7f);
 	}
 }

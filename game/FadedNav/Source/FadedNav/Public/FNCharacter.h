@@ -62,6 +62,10 @@ public:
 	int32 GetSkillPoints() const;
 	void TryAllocate(int32 Node);
 	void ToggleTree();
+
+	// Exam hooks.
+	void ReviveAt(const FVector& At);
+	void GiveTrace();              // cosmetic trace for the rare exam win (no power)
 	void FindRune(int32 Node);
 
 	// Kills needed for each evolution step (GDD §4: ~5 per stage [D]).
@@ -191,6 +195,7 @@ private:
 	double MessageTime = -100.0;
 
 	bool bTreeOpen = false;
+	bool bHasTrace = false;
 	float StageBaseHealth = 100.f;
 	float StageBaseSpeed = 500.f;
 	struct FFNTreeCache { float Ranged = 1.f, FireRate = 1.f, Weak = 0.f, Reload = 0.f, Reserve = 0.f, Melee = 0.f, MeleeHeal = 0.f, Stamina = 0.f, Dodge = 0.f, IFrames = 0.f; } TreeMods;
