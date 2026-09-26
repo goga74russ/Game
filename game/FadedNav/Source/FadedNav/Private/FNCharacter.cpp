@@ -195,9 +195,16 @@ void AFNCharacter::BuildInput()
 	Weapon1Action = MakeAction(EInputActionValueType::Boolean);
 	Weapon2Action = MakeAction(EInputActionValueType::Boolean);
 	Weapon3Action = MakeAction(EInputActionValueType::Boolean);
-	Mapping->MapKey(Weapon1Action, EKeys::One);
-	Mapping->MapKey(Weapon2Action, EKeys::Two);
-	Mapping->MapKey(Weapon3Action, EKeys::Three);
+	// Weapons: mouse wheel and Q (keys 1-4 are ability slots).
+	Mapping->MapKey(Weapon1Action, EKeys::MouseScrollUp);
+	Mapping->MapKey(Weapon2Action, EKeys::MouseScrollDown);
+	Mapping->MapKey(Weapon3Action, EKeys::Q);
+	const FKey AbilityKeys[4] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four };
+	for (int32 i = 0; i < 4; ++i)
+	{
+		AbilityActions[i] = MakeAction(EInputActionValueType::Boolean);
+		Mapping->MapKey(AbilityActions[i], AbilityKeys[i]);
+	}
 	TreeAction = MakeAction(EInputActionValueType::Boolean);
 	TreeAction->bTriggerWhenPaused = true;
 	Mapping->MapKey(TreeAction, EKeys::Tab);
@@ -234,6 +241,10 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	Input->BindAction(Weapon1Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon1);
 	Input->BindAction(Weapon2Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon2);
 	Input->BindAction(Weapon3Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon3);
+	for (int32 i = 0; i < 4; ++i)
+	{
+		Input->BindAction(AbilityActions[i], ETriggerEvent::Started, this, &AFNCharacter::OnAbility, i);
+	}
 	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
 }
 
@@ -418,6 +429,27 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 		}
 		DrawDebugPoint(GetWorld(), Impact, 8.f, FColor(255, 230, 160), false, 0.1f);
 	}
+}
+
+void AFNCharacter::CycleWeapon(int32 Dir)
+{
+	for (int32 Step = 1; Step <= 3; ++Step)
+	{
+		const EFNWeapon Next = static_cast<EFNWeapon>((static_cast<int32>(Weapon) + Dir * Step + 3) % 3);
+		if (HasWeapon(Next))
+		{
+			SelectWeapon(Next);
+			return;
+		}
+	}
+}
+
+void AFNCharacter::OnAbility(int32 Slot)
+{
+	// Skill gems are not in the demo yet: the slots show the future layout.
+	ShowMessage(IsAbilitySlotOpen(Slot)
+		? FString::Printf(TEXT("Слот %d пуст — камень-навык ещё не найден"), Slot + 1)
+		: FString(TEXT("Слот 4 — ульта. Откроется в Нави")));
 }
 
 void AFNCharacter::SelectWeapon(EFNWeapon W)

@@ -49,6 +49,9 @@ public:
 	int32 GetScatterAmmo() const { return ScatterAmmo; }
 	bool HasWeapon(EFNWeapon W) const { return W == EFNWeapon::Plasma || (W == EFNWeapon::Rifle && bHasRifle) || (W == EFNWeapon::Scatter && bHasScatter); }
 	FLinearColor GetSparkColor() const { return SparkColor; }
+	float GetArmor() const { return ArmorBonus; }
+	// Ability slots 1-4 (GDD §4: Yav — 3 skill-gem slots; slot 4 = ultimate, opens in Nav). Empty in the demo for now.
+	bool IsAbilitySlotOpen(int32 Slot) const { return Slot < 3; }
 	int32 GetKills() const;
 	void GiveWeapon(EFNWeapon NewWeapon);
 	void GiveArmor(float Bonus);
@@ -129,6 +132,7 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> Weapon1Action;
 	UPROPERTY() TObjectPtr<UInputAction> Weapon2Action;
 	UPROPERTY() TObjectPtr<UInputAction> Weapon3Action;
+	UPROPERTY() TObjectPtr<UInputAction> AbilityActions[4];
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
 private:
@@ -148,9 +152,11 @@ private:
 	void FireShot();
 	void FireTrace(float Damage, float SpreadDeg, float Range, const FColor& Tracer);
 	void SelectWeapon(EFNWeapon W);
-	void OnWeapon1() { SelectWeapon(EFNWeapon::Plasma); }
-	void OnWeapon2() { SelectWeapon(EFNWeapon::Rifle); }
-	void OnWeapon3() { SelectWeapon(EFNWeapon::Scatter); }
+	void OnWeapon1() { CycleWeapon(+1); }
+	void OnWeapon2() { CycleWeapon(-1); }
+	void OnWeapon3() { CycleWeapon(+1); }
+	void CycleWeapon(int32 Dir);
+	void OnAbility(int32 Slot);
 	void SetStage(EFNStage NewStage, bool bAnnounce);
 	void Revive();
 	void ApplyStats();

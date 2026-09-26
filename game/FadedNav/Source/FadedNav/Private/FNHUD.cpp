@@ -7,6 +7,7 @@
 #include "FNCharacter.h"
 #include "FNGameMode.h"
 #include "FNHealthComponent.h"
+#include "FNMob.h"
 #include "FNPerunBoss.h"
 #include "FNSkillTree.h"
 
@@ -112,7 +113,7 @@ namespace
 	const FLinearColor TextMain(0.93f, 0.91f, 0.86f);
 	const FLinearColor TextDim(0.66f, 0.64f, 0.6f);
 	const FLinearColor HealthRed(0.66f, 0.07f, 0.06f);
-	const FLinearColor HealthChip(0.95f, 0.85f, 0.75f);
+	const FLinearColor HealthChip(0.55f, 0.36f, 0.3f); // trailing damage: muted, so it never reads as health
 	const FLinearColor StaminaTone(0.86f, 0.84f, 0.76f);
 	const FLinearColor Gold(1.f, 0.78f, 0.35f);
 	const FLinearColor BossRed(0.62f, 0.05f, 0.05f);
@@ -188,7 +189,7 @@ void AFNHUD::DrawHUD()
 
 	if (GetWorld()->GetTimeSeconds() < 15.0)
 	{
-		DrawCentered(TEXT("WASD — ход   ЛКМ — огонь   ПКМ — прицел   Пробел — уклонение   F — удар   R — перезарядка   1/2/3 — оружие   Tab — дерево"),
+		DrawCentered(TEXT("WASD — ход   ЛКМ — огонь   ПКМ — прицел   Пробел — уклонение   F — удар   R — перезарядка   Колесо/Q — оружие   1–4 — способности   Tab — дерево"),
 			H * 0.9f, TextDim, 0.8f);
 	}
 
@@ -207,23 +208,49 @@ void AFNHUD::DrawHUD()
 			}
 		}
 
-		// ---- Top-left: health (red, notched every 25) with trailing chip, stamina below.
+		// ---- Bottom-centre: ability slots 1-4 on the left, then stamina over health (notched, trailing chip).
 		{
-			const float X = 36.f, Y = 34.f, BW = 360.f;
+			const float SlotSize = 46.f, Gap = 6.f, BarW = 340.f;
+			const float BlockW = 4.f * (SlotSize + Gap) + 14.f + BarW;
+			const float X0 = (W - BlockW) * 0.5f, Y0 = H - 78.f;
+
+			for (int32 i = 0; i < 4; ++i)
+			{
+				const float SX = X0 + i * (SlotSize + Gap);
+				const bool bOpen = Player->IsAbilitySlotOpen(i);
+				DrawRect(FrameDark, SX, Y0, SlotSize, SlotSize);
+				DrawLine(SX, Y0, SX + SlotSize, Y0, bOpen ? FrameLine : FLinearColor(0.3f, 0.3f, 0.3f), 1.f);
+				DrawLine(SX, Y0 + SlotSize, SX + SlotSize, Y0 + SlotSize, FrameLine * FLinearColor(1, 1, 1, 0.4f), 1.f);
+				if (!bOpen)
+				{
+					// Slot 4: the ultimate, sealed until Nav.
+					DrawLine(SX + 12.f, Y0 + 12.f, SX + SlotSize - 12.f, Y0 + SlotSize - 12.f, FLinearColor(0.35f, 0.35f, 0.35f), 1.5f);
+					DrawLine(SX + SlotSize - 12.f, Y0 + 12.f, SX + 12.f, Y0 + SlotSize - 12.f, FLinearColor(0.35f, 0.35f, 0.35f), 1.5f);
+				}
+				DrawText(FString::FromInt(i + 1), bOpen ? TextMain : TextDim, SX + 4.f, Y0 + 2.f, Small, 0.8f);
+			}
+
+			const float BX = X0 + 4.f * (SlotSize + Gap) + 14.f;
+			const float Max = Player->GetHealth()->MaxHealth;
+
+			// Stamina above health.
+			DrawRect(FrameDark, BX - 2.f, Y0 - 2.f, BarW + 4.f, 10.f);
+			DrawRect(StaminaTone, BX, Y0, BarW * Player->GetStaminaRatio(), 6.f);
+
+			const float HY = Y0 + 12.f;
 			const float Ratio = Player->GetHealth()->GetRatio();
 			ShownHealth = ShownHealth < 0.f ? Ratio : FMath::FInterpTo(ShownHealth, Ratio, Dt, Ratio < ShownHealth ? 2.5f : 20.f);
-			DrawRect(FrameDark, X - 3.f, Y - 3.f, BW + 6.f, 22.f);
-			DrawRect(HealthChip, X, Y, BW * FMath::Max(ShownHealth, Ratio), 16.f);
-			DrawRect(HealthRed, X, Y, BW * Ratio, 16.f);
-			const float Max = Player->GetHealth()->MaxHealth;
+			DrawRect(FrameDark, BX - 3.f, HY - 3.f, BarW + 6.f, 22.f);
+			DrawRect(HealthChip, BX, HY, BarW * FMath::Max(ShownHealth, Ratio), 16.f);
+			DrawRect(HealthRed, BX, HY, BarW * Ratio, 16.f);
 			for (float V = 25.f; V < Max; V += 25.f)
 			{
-				DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.5f), X + BW * (V / Max), Y, 1.5f, 16.f);
+				DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.5f), BX + BarW * (V / Max), HY, 1.5f, 16.f);
 			}
-			DrawRect(FrameDark, X - 3.f, Y + 22.f, BW * 0.75f + 6.f, 9.f);
-			DrawRect(StaminaTone, X, Y + 24.f, BW * 0.75f * Player->GetStaminaRatio(), 5.f);
+			DrawText(FString::Printf(TEXT("%.0f / %.0f"), Player->GetHealth()->Health, Max), TextMain, BX + 6.f, HY - 1.f, Small, 0.8f);
+
 			static const TCHAR* StageNames[] = { TEXT("Искра"), TEXT("Скелет"), TEXT("Плоть") };
-			DrawText(FString::Printf(TEXT("%s  ·  %.0f"), StageNames[static_cast<int32>(Player->GetStage())], Player->GetHealth()->Health), TextDim, X, Y + 36.f, Small, 0.85f);
+			DrawText(StageNames[static_cast<int32>(Player->GetStage())], TextDim, BX, HY + 22.f, Small, 0.8f);
 		}
 
 		// ---- Bottom-left: round "relic" slot = the Spark's emblem, count = rune-keys found.
@@ -287,7 +314,7 @@ void AFNHUD::DrawHUD()
 			const float MX = W - 58.f, MY = Y + 44.f;
 			FillDisc(MX, MY, 22.f, FrameDark);
 			DrawRing(MX, MY, 22.f, FrameLine, 1.5f);
-			DrawText(FString::FromInt(static_cast<int32>(Cur) + 1), TextMain, MX - 5.f, MY - 10.f, Medium, 0.9f);
+			DrawText(TEXT("Q"), TextMain, MX - 6.f, MY - 10.f, Medium, 0.9f);
 
 			// Other owned weapons, small, above the block.
 			float SY = Y - 22.f;
@@ -295,7 +322,7 @@ void AFNHUD::DrawHUD()
 			{
 				const EFNWeapon Wp = static_cast<EFNWeapon>(i);
 				if (Wp == Cur || !Player->HasWeapon(Wp)) { continue; }
-				DrawText(FString::Printf(TEXT("%d  %s"), i + 1, WeaponNames[i]), TextDim, W - 190.f, SY, Small, 0.8f);
+				DrawText(WeaponNames[i], TextDim, W - 190.f, SY, Small, 0.8f);
 				SY -= 18.f;
 			}
 		}
@@ -338,19 +365,40 @@ void AFNHUD::DrawHUD()
 		}
 	}
 
-	// ---- Bottom-centre boss bar: name above, thin red bar in a dark frame, trailing damage chip.
+	// ---- Mob health bars above their heads (only near or wounded).
+	if (Player)
+	{
+		for (TActorIterator<AFNMob> It(GetWorld()); It; ++It)
+		{
+			AFNMob* Mob = *It;
+			const UFNHealthComponent* MH = Mob->FindComponentByClass<UFNHealthComponent>();
+			if (!MH || Mob->IsDead() || MH->IsDead()) { continue; }
+			const float Dist = FVector::Dist(Mob->GetActorLocation(), Player->GetActorLocation());
+			if (Dist > 3500.f || (MH->GetRatio() >= 1.f && Dist > 1800.f)) { continue; }
+			const FVector S = Project(Mob->GetActorLocation() + FVector(0.f, 0.f, 150.f));
+			if (S.Z <= 0.f) { continue; } // behind the camera
+			const float BW = 56.f;
+			DrawRect(FrameDark, S.X - BW * 0.5f - 1.f, S.Y - 1.f, BW + 2.f, 7.f);
+			DrawRect(HealthRed, S.X - BW * 0.5f, S.Y, BW * MH->GetRatio(), 5.f);
+		}
+	}
+
+	// ---- Boss / elite: big bar at the top centre with the name (god or elite).
 	const bool bBossBar = Boss && Boss->IsFightActive();
-	const float BarY = H - 46.f;
 	if (bBossBar)
 	{
-		const float BW = W * 0.4f, X = (W - BW) * 0.5f;
+		const float BW = W * 0.5f, X = (W - BW) * 0.5f, Y = 64.f;
 		const float Ratio = Boss->GetHealth()->GetRatio();
 		ShownBoss = ShownBoss < 0.f ? Ratio : FMath::FInterpTo(ShownBoss, Ratio, Dt, Ratio < ShownBoss ? 1.5f : 20.f);
-		DrawText(FString::Printf(TEXT("Перун, наставник   ·   фаза %d"), Boss->GetPhase()), FLinearColor(0.f, 0.f, 0.f, 0.85f), X + 1.5f, BarY - 20.5f, Small, 0.9f);
-		DrawText(FString::Printf(TEXT("Перун, наставник   ·   фаза %d"), Boss->GetPhase()), TextMain, X, BarY - 22.f, Small, 0.9f);
-		DrawRect(FrameDark, X - 3.f, BarY - 3.f, BW + 6.f, 14.f);
-		DrawRect(HealthChip, X, BarY, BW * FMath::Max(ShownBoss, Ratio), 8.f);
-		DrawRect(BossRed, X, BarY, BW * Ratio, 8.f);
+		DrawCentered(TEXT("ПЕРУН"), 18.f, TextMain, 1.1f);
+		DrawCentered(FString::Printf(TEXT("наставник  ·  фаза %d"), Boss->GetPhase()), 44.f, TextDim, 0.75f);
+		DrawRect(FrameDark, X - 3.f, Y - 3.f, BW + 6.f, 18.f);
+		DrawRect(HealthChip, X, Y, BW * FMath::Max(ShownBoss, Ratio), 12.f);
+		DrawRect(BossRed, X, Y, BW * Ratio, 12.f);
+		for (int32 i = 1; i < 3; ++i) // phase marks at 66% / 33%
+		{
+			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), X + BW * (i / 3.f), Y, 2.f, 12.f);
+		}
 	}
 	else
 	{
@@ -365,7 +413,7 @@ void AFNHUD::DrawHUD()
 	// Subtitles sit above the boss bar, like the reference.
 	if (Boss && Boss->HasSubtitle())
 	{
-		DrawCentered(FString::Printf(TEXT("%s:  %s"), *Boss->GetSubtitleSpeaker(), *Boss->GetSubtitle()), bBossBar ? BarY - 52.f : H - 70.f, FLinearColor(1.f, 0.97f, 0.9f), 0.85f);
+		DrawCentered(FString::Printf(TEXT("%s:  %s"), *Boss->GetSubtitleSpeaker(), *Boss->GetSubtitle()), H - 128.f, FLinearColor(1.f, 0.97f, 0.9f), 0.85f);
 	}
 
 	if (Boss && Boss->ShowEndCard())
