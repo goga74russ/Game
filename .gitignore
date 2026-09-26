@@ -1,0 +1,23 @@
+# Unreal Engine
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.pdb
+*.obj
+*.ilk
+
+# Big binary assets go through Git LFS (set up with the UE project)
+
+# Local / OS
+Thumbs.db
+.DS_Store
+.claude/settings.local.json
