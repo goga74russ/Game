@@ -123,4 +123,6 @@ private:
 	bool bLastHitWeak = false;
 
 	float DefaultWalkSpeed = 500.f;
+	FVector LastSafeLocation = FVector::ZeroVector;
+	float SafeTimer = 0.f;
 };

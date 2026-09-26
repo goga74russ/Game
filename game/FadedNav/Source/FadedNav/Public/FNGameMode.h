@@ -21,4 +21,6 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<AActor> SpawnPoint;
+
+	bool bArenaTest = false;
 };

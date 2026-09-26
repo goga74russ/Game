@@ -45,6 +45,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Perun") float RecoverTime = 0.9f;
 	UPROPERTY(EditAnywhere, Category = "Perun") float MinCooldown = 1.0f;
 	UPROPERTY(EditAnywhere, Category = "Perun") float MaxCooldown = 2.0f;
+	UPROPERTY(EditAnywhere, Category = "Perun") float ActivationRadius = 2200.f;
 
 protected:
 	virtual void BeginPlay() override;
@@ -81,4 +82,5 @@ private:
 	int32 AttackCount = 0;
 	float ImpulseRemaining = 0.f;
 	TArray<FTimerHandle> BoltTimers;
+	FVector HomeLocation = FVector::ZeroVector;
 };

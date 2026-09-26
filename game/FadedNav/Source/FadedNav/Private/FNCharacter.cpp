@@ -94,6 +94,7 @@ void AFNCharacter::BeginPlay()
 	Stamina = MaxStamina;
 	DefaultWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
 	Health->OnDeath.AddDynamic(this, &AFNCharacter::HandleDeath);
+	LastSafeLocation = GetActorLocation();
 
 	const FLinearColor Flesh(0.55f, 0.5f, 0.45f);
 	for (UStaticMeshComponent* C : { Body.Get(), Head.Get() })
@@ -369,6 +370,19 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	if (bDead)
 	{
 		return;
+	}
+
+	// Grey-box safety net: remember safe ground, return there after falling off the path.
+	SafeTimer -= DeltaSeconds;
+	if (GetCharacterMovement()->IsMovingOnGround() && SafeTimer <= 0.f)
+	{
+		LastSafeLocation = GetActorLocation();
+		SafeTimer = 1.f;
+	}
+	if (GetActorLocation().Z < LastSafeLocation.Z - 3000.f)
+	{
+		SetActorLocation(LastSafeLocation, false, nullptr, ETeleportType::ResetPhysics);
+		GetCharacterMovement()->StopMovementImmediately();
 	}
 
 	// Roll: fixed-velocity dash, i-frames at the start.

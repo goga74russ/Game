@@ -101,7 +101,8 @@ void AFNPerunBoss::BeginPlay()
 	HeadMID = Head->CreateDynamicMaterialInstance(0);
 	SetTint(BronzeTint);
 	Health->OnDeath.AddDynamic(this, &AFNPerunBoss::HandleDeath);
-	State = EFNBossState::Chase;
+	HomeLocation = GetActorLocation();
+	State = EFNBossState::Idle;
 }
 
 AFNCharacter* AFNPerunBoss::FindTarget() const
@@ -280,11 +281,21 @@ void AFNPerunBoss::Tick(float DeltaSeconds)
 	switch (State)
 	{
 	case EFNBossState::Idle:
-		State = EFNBossState::Chase;
+		// Waits until the player steps into the arena (R 22 m).
+		if (FVector::Dist2D(Target->GetActorLocation(), HomeLocation) < ActivationRadius)
+		{
+			State = EFNBossState::Chase;
+			Cooldown = 1.5f;
+		}
 		break;
 
 	case EFNBossState::Chase:
 	{
+		if (FVector::Dist2D(Target->GetActorLocation(), HomeLocation) > ActivationRadius + 800.f)
+		{
+			State = EFNBossState::Idle; // player left the arena
+			break;
+		}
 		const FRotator Face(0.f, ToTarget.Rotation().Yaw, 0.f);
 		SetActorRotation(FMath::RInterpTo(GetActorRotation(), Face, DeltaSeconds, 5.f));
 		if (ToTarget.Size2D() > SlamRadius * 0.7f)

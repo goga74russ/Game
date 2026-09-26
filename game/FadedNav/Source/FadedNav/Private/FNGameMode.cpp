@@ -12,6 +12,8 @@
 #include "FNCharacter.h"
 #include "FNHUD.h"
 #include "FNPerunBoss.h"
+#include "FNVysiGreybox.h"
+#include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerStart.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
@@ -24,6 +26,8 @@ AFNGameMode::AFNGameMode()
 void AFNGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
+	// Default: chapter grey-box. "?Arena" on the command line keeps the flat boss test arena.
+	bArenaTest = UGameplayStatics::HasOption(Options, TEXT("Arena"));
 	BuildArena();
 }
 
@@ -33,7 +37,8 @@ AActor* AFNGameMode::FindPlayerStart_Implementation(AController* Player, const F
 	{
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		SpawnPoint = GetWorld()->SpawnActor<APlayerStart>(FVector(-1800.f, 0.f, 120.f), FRotator::ZeroRotator, Params);
+		const FVector Start = bArenaTest ? FVector(-1800.f, 0.f, 120.f) : AFNVysiGreybox::PlayerStart() + FVector(0.f, 0.f, 100.f);
+		SpawnPoint = GetWorld()->SpawnActor<APlayerStart>(Start, bArenaTest ? FRotator::ZeroRotator : FRotator(0.f, 20.f, 0.f), Params);
 	}
 	return SpawnPoint;
 }
@@ -62,7 +67,9 @@ void AFNGameMode::BuildArena()
 		return A;
 	};
 
-	// Floor: 80 m plateau ("Thunder Heights" grey-box).
+	if (bArenaTest)
+	{
+	// Floor: 80 m plateau.
 	SpawnMesh(Plane, FVector::ZeroVector, FVector(80.f, 80.f, 1.f), FLinearColor(0.18f, 0.19f, 0.2f));
 
 	// Oak lightning-rods / pillars for spatial reference (low saturation environment, style §2).
@@ -75,9 +82,11 @@ void AFNGameMode::BuildArena()
 	}
 	SpawnMesh(Cube, FVector(-900.f, 700.f, 100.f), FVector(2.f, 4.f, 2.f), PillarColor);
 	SpawnMesh(Cube, FVector(-900.f, -700.f, 100.f), FVector(2.f, 4.f, 2.f), PillarColor);
+	}
 
 	// Light: low sun + sky atmosphere + real-time sky light + fog ("twilight without darkness").
-	if (ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(FVector(0.f, 0.f, 1000.f), FRotator(-25.f, 35.f, 0.f), Params))
+	ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(FVector(0.f, 0.f, 1000.f), FRotator(-25.f, 35.f, 0.f), Params);
+	if (Sun)
 	{
 		UDirectionalLightComponent* L = CastChecked<UDirectionalLightComponent>(Sun->GetLightComponent());
 		L->SetMobility(EComponentMobility::Movable);
@@ -100,5 +109,17 @@ void AFNGameMode::BuildArena()
 	World->SpawnActor<AExponentialHeightFog>(FVector::ZeroVector, FRotator::ZeroRotator, Params);
 
 	// Perun, the mentor.
-	World->SpawnActor<AFNPerunBoss>(FVector(1200.f, 0.f, 200.f), FRotator(0.f, 180.f, 0.f), Params);
+	if (bArenaTest)
+	{
+		World->SpawnActor<AFNPerunBoss>(FVector(1200.f, 0.f, 200.f), FRotator(0.f, 180.f, 0.f), Params);
+	}
+	else
+	{
+		if (AFNVysiGreybox* Level = World->SpawnActor<AFNVysiGreybox>(FVector::ZeroVector, FRotator::ZeroRotator, Params))
+		{
+			Level->Build(Sun);
+		}
+		// Stands in the centre with his back to the entrance.
+		World->SpawnActor<AFNPerunBoss>(AFNVysiGreybox::ArenaCenter() + FVector(300.f, 0.f, 200.f), FRotator(0.f, 0.f, 0.f), Params);
+	}
 }
