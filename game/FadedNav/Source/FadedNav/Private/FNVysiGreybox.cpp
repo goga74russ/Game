@@ -1,6 +1,11 @@
 #include "FNVysiGreybox.h"
 
 #include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/PostProcessVolume.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -9,6 +14,8 @@
 #include "Engine/TextRenderActor.h"
 #include "EngineUtils.h"
 #include "FNCharacter.h"
+#include "FNHealthComponent.h"
+#include "FNPerunBoss.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/PlayerController.h"
 #include "HighResScreenshot.h"
@@ -296,11 +303,104 @@ void AFNVysiGreybox::Build(ADirectionalLight* InSun)
 	OakFlash->SetLightColor(FLinearColor(0.6f, 0.65f, 1.f));
 	OakFlash->SetAttenuationRadius(60000.f);
 	OakFlash->SetIntensity(0.f);
+
+	SetupAtmosphere();
+}
+
+void AFNVysiGreybox::SetupAtmosphere()
+{
+	FActorSpawnParameters P;
+	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// Low golden sun, the storm front sits upper-left of the climb (style_v0.1: Vysi motif).
+	if (Sun)
+	{
+		Sun->SetActorRotation(FRotator(-24.f, 60.f, 0.f));
+	}
+
+	// Height fog with volumetric scattering: dusty haze in the valleys, clearer toward the ridge.
+	for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It)
+	{
+		UExponentialHeightFogComponent* Fog = It->GetComponent();
+		Fog->SetFogDensity(0.018f);
+		Fog->SetFogHeightFalloff(0.04f);
+		Fog->SetFogInscatteringColor(FLinearColor(0.45f, 0.5f, 0.6f));
+		Fog->SetDirectionalInscatteringColor(FLinearColor(0.9f, 0.7f, 0.45f));
+		Fog->SetVolumetricFog(true);
+		break;
+	}
+
+	// Volumetric clouds from the engine's simple cloud material.
+	if (AVolumetricCloud* Clouds = GetWorld()->SpawnActor<AVolumetricCloud>(FVector::ZeroVector, FRotator::ZeroRotator, P))
+	{
+		if (UMaterialInterface* CloudMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
+		{
+			if (UVolumetricCloudComponent* C = Clouds->FindComponentByClass<UVolumetricCloudComponent>()) { C->SetMaterial(CloudMat); }
+		}
+	}
+
+	// Global post process: manual exposure + grading; values follow the climb in Tick.
+	Grade = GetWorld()->SpawnActor<APostProcessVolume>(FVector::ZeroVector, FRotator::ZeroRotator, P);
+	if (Grade)
+	{
+		Grade->bUnbound = true;
+		FPostProcessSettings& S = Grade->Settings;
+		S.bOverride_AutoExposureMethod = true;
+		S.AutoExposureMethod = AEM_Manual;
+		S.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+		S.AutoExposureApplyPhysicalCameraExposure = false;
+		S.bOverride_AutoExposureBias = true;
+		S.bOverride_WhiteTemp = true;
+		S.bOverride_ColorSaturation = true;
+		S.bOverride_ColorContrast = true;
+		S.ColorContrast = FVector4(1.08f, 1.08f, 1.08f, 1.f);
+		S.bOverride_VignetteIntensity = true;
+		S.VignetteIntensity = 0.45f;
+		S.bOverride_FilmGrainIntensity = true;
+		S.FilmGrainIntensity = 0.06f;
+	}
 }
 
 void AFNVysiGreybox::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// "-AutoExam": scripted walk through the exam (intro -> phase 2 -> outcome A -> epilogue -> end card) with screenshots.
+	if (FParse::Param(FCommandLine::Get(), TEXT("AutoExam")))
+	{
+		const float T = GetWorld()->GetRealTimeSeconds();
+		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		AFNCharacter* Hero = PC ? Cast<AFNCharacter>(PC->GetPawn()) : nullptr;
+		AFNPerunBoss* Boss = nullptr;
+		for (TActorIterator<AFNPerunBoss> It(GetWorld()); It; ++It) { Boss = *It; break; }
+		auto Shot = [this](int32 Step, const TCHAR* Name)
+		{
+			if (ExamStep < Step)
+			{
+				ExamStep = Step;
+				FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString(Name) + TEXT(".png"), false, false);
+			}
+		};
+		if (Hero && Boss)
+		{
+			if (T > 14.f && ExamStep < 1) { ExamStep = 1; Hero->SetActorLocation(FVector(704.f, -6.f, 92.f) * M, false, nullptr, ETeleportType::TeleportPhysics); PC->SetControlRotation(FRotator(-8.f, 15.f, 0.f)); }
+			if (T > 18.f) { Shot(2, TEXT("10_exam_intro")); }
+			if (T > 21.f && ExamStep < 3) { ExamStep = 3; Boss->GetHealth()->ApplyDamage(Boss->GetHealth()->MaxHealth * 0.36f, nullptr); }
+			if (T > 22.5f) { Shot(4, TEXT("11_exam_phase2")); }
+			if (T > 26.f && ExamStep < 5) { ExamStep = 5; Hero->GetHealth()->bInvulnerable = false; Hero->GetHealth()->ApplyDamage(99999.f, nullptr); }
+			if (T > 28.f) { Shot(6, TEXT("12_exam_stopped")); }
+			if (T > 37.f && ExamStep < 7) { ExamStep = 7; Hero->SetActorLocation(FVector(855.f, 2.f, 121.f) * M, false, nullptr, ETeleportType::TeleportPhysics); PC->SetControlRotation(FRotator(-5.f, 10.f, 0.f)); }
+			if (T > 41.5f && ExamStep < 8)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("FNEXAM boss=%s hero=%s dead=%d"), *Boss->GetActorLocation().ToString(), *Hero->GetActorLocation().ToString(), Hero->IsDead() ? 1 : 0);
+			}
+			if (T > 41.5f) { Shot(8, TEXT("13_exam_epilogue")); }
+			if (T > 46.3f) { Shot(9, TEXT("13b_thunder")); }
+			if (T > 51.f) { Shot(10, TEXT("14_end_card")); }
+			if (T > 53.f) { PC->ConsoleCommand(TEXT("quit")); }
+		}
+		return;
+	}
 
 	// "-AutoShot": fly through key viewpoints, save screenshots to Saved/Screenshots, then quit (for remote review).
 	if (FParse::Param(FCommandLine::Get(), TEXT("AutoShot")))
@@ -315,7 +415,7 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 			{ FVector(760.f, -10.f, 97.f), 5.f, 8.f, TEXT("06_ridge_oak") },
 		};
 		constexpr int32 NumShots = static_cast<int32>(UE_ARRAY_COUNT(Shots));
-		ShotClock += DeltaSeconds;
+		ShotClock = GetWorld()->GetRealTimeSeconds(); // real time: the tree shot slows game time
 		const int32 Idx = FMath::FloorToInt((ShotClock - 15.f) / 5.f);
 		APlayerController* PC = GetWorld()->GetFirstPlayerController();
 		if (PC && PC->GetPawn() && Idx >= 0 && Idx < NumShots)
@@ -328,6 +428,18 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 			{
 				ShotTaken = Idx;
 				FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString(S.Name) + TEXT(".png"), false, false);
+			}
+		}
+		if (Idx == NumShots && PC)
+		{
+			if (AFNCharacter* Hero = Cast<AFNCharacter>(PC->GetPawn()))
+			{
+				if (!Hero->IsTreeOpen()) { Hero->FindRune(3); Hero->ToggleTree(); }
+				if (FMath::Fmod(ShotClock - 15.f, 5.f) > 3.5f && ShotTaken != Idx)
+				{
+					ShotTaken = Idx;
+					FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / TEXT("07_tree.png"), false, false);
+				}
 			}
 		}
 		if (Idx >= NumShots + 1 && PC)
@@ -347,8 +459,16 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 	if (Sun)
 	{
 		UDirectionalLightComponent* L = CastChecked<UDirectionalLightComponent>(Sun->GetLightComponent());
-		L->SetIntensity(FMath::Lerp(7.f, 2.2f, Dim));
-		L->SetLightColor(FMath::Lerp(FLinearColor(1.f, 0.85f, 0.65f), FLinearColor(0.7f, 0.75f, 0.95f), Dim));
+		L->SetIntensity(FMath::Lerp(6.f, 3.f, Dim));
+		L->SetLightColor(FMath::Lerp(FLinearColor(1.f, 0.8f, 0.55f), FLinearColor(0.7f, 0.76f, 0.95f), Dim));
+	}
+	if (Grade)
+	{
+		FPostProcessSettings& S = Grade->Settings;
+		S.AutoExposureBias = FMath::Lerp(0.2f, 0.7f, Dim);                       // tame the bright valley, keep the ridge readable
+		S.WhiteTemp = FMath::Lerp(7200.f, 5600.f, Dim);                              // warm below, cold above
+		const float Sat = FMath::Lerp(0.95f, 0.72f, Dim);                            // colour drains with the memory
+		S.ColorSaturation = FVector4(Sat, Sat, Sat, 1.f);
 	}
 
 	LightningTimer -= DeltaSeconds;
@@ -356,7 +476,19 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 	{
 		LightningTimer = 12.f;
 		FlashRemaining = 0.12f;
-		OakFlash->SetIntensity(300000.f);
+		OakFlash->SetIntensity(2000000.f);
+
+		// Visible bolt: jagged blue-violet line from the clouds into the oak's crown (never pure white: GDD §9).
+		FVector Prev = FVector(860.f, 0.f, 420.f) * M;
+		const FVector Target = FVector(860.f, 0.f, 150.f) * M;
+		for (int32 i = 1; i <= 7; ++i)
+		{
+			const float A = i / 7.f;
+			FVector Next = FMath::Lerp(FVector(860.f, 0.f, 420.f) * M, Target, A);
+			if (i < 7) { Next += FVector(FMath::FRandRange(-1500.f, 1500.f), FMath::FRandRange(-1500.f, 1500.f), 0.f); }
+			DrawDebugLine(GetWorld(), Prev, Next, FColor(170, 180, 255), false, 0.15f, 0, 60.f);
+			Prev = Next;
+		}
 	}
 	if (FlashRemaining > 0.f)
 	{

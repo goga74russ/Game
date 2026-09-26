@@ -23,8 +23,11 @@ public:
 private:
 	void BuildArena();
 	void SpawnChapterMobs();
+	void SpawnChapterItems();
 
 	int32 Kills = 0;
+	int32 NextRune = 0;
+	int32 RuneMisses = 0;
 
 	UPROPERTY()
 	TObjectPtr<AActor> SpawnPoint;

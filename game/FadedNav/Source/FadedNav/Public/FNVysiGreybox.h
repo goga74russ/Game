@@ -23,6 +23,7 @@ public:
 	static FVector ArenaCenter();   // cm
 
 	void Build(ADirectionalLight* InSun);
+	void StrikeNow() { LightningTimer = 0.f; } // force the next oak strike this frame (exam epilogue)
 
 private:
 	AActor* Box(const FVector& TopCenterM, const FVector& SizeM, const FLinearColor& Color, bool bCollide = true);
@@ -31,13 +32,16 @@ private:
 	AActor* Ball(const FVector& CenterM, float DiameterM, const FLinearColor& Color);
 	void Label(const FVector& PosM, const FString& Text, const FColor& Color);
 	void LootColumn(const FVector& PosM);
+	void SetupAtmosphere();
 
 	UPROPERTY() TObjectPtr<ADirectionalLight> Sun;
 	UPROPERTY() TObjectPtr<UPointLightComponent> OakFlash;
+	UPROPERTY() TObjectPtr<class APostProcessVolume> Grade;
 
 	float LightningTimer = 12.f;
 	float FlashRemaining = 0.f;
 	float ShotClock = 0.f;
 	int32 ShotTaken = -1;
+	int32 ExamStep = 0;
 	bool bHasLandscape = false;
 };
