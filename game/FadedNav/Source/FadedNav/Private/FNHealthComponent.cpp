@@ -1,0 +1,28 @@
+#include "FNHealthComponent.h"
+
+UFNHealthComponent::UFNHealthComponent()
+{
+	PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UFNHealthComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	Health = MaxHealth;
+}
+
+float UFNHealthComponent::ApplyDamage(float Amount, AActor* Instigator)
+{
+	if (IsDead() || bInvulnerable || Amount <= 0.f)
+	{
+		return 0.f;
+	}
+
+	const float Applied = FMath::Min(Amount, Health);
+	Health -= Applied;
+	if (IsDead())
+	{
+		OnDeath.Broadcast(Instigator);
+	}
+	return Applied;
+}
