@@ -30,3 +30,6 @@ game/FadedNav/Content/Fab/
 # Visual Studio / IDE generated
 *.slnx
 .vsconfig
+
+# Raw downloaded/generated assets (Fab, Meshy): licence forbids public repo
+game/FadedNav/Import/
