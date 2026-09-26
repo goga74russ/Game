@@ -190,14 +190,20 @@ void AFNCharacter::BuildInput()
 	Mapping->MapKey(AimAction, EKeys::RightMouseButton);
 	Mapping->MapKey(RollAction, EKeys::SpaceBar);
 	Mapping->MapKey(ReloadAction, EKeys::R);
-	Mapping->MapKey(MeleeAction, EKeys::F);
 	Mapping->MapKey(RestartAction, EKeys::Enter);
 	Weapon1Action = MakeAction(EInputActionValueType::Boolean);
 	Weapon2Action = MakeAction(EInputActionValueType::Boolean);
 	Weapon3Action = MakeAction(EInputActionValueType::Boolean);
-	Mapping->MapKey(Weapon1Action, EKeys::One);
-	Mapping->MapKey(Weapon2Action, EKeys::Two);
-	Mapping->MapKey(Weapon3Action, EKeys::Three);
+	// Weapons: mouse wheel and Q (keys 1-4 are ability slots).
+	Mapping->MapKey(Weapon1Action, EKeys::MouseScrollUp);
+	Mapping->MapKey(Weapon2Action, EKeys::MouseScrollDown);
+	Mapping->MapKey(Weapon3Action, EKeys::Q);
+	const FKey AbilityKeys[4] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four };
+	for (int32 i = 0; i < 4; ++i)
+	{
+		AbilityActions[i] = MakeAction(EInputActionValueType::Boolean);
+		Mapping->MapKey(AbilityActions[i], AbilityKeys[i]);
+	}
 	TreeAction = MakeAction(EInputActionValueType::Boolean);
 	TreeAction->bTriggerWhenPaused = true;
 	Mapping->MapKey(TreeAction, EKeys::Tab);
@@ -229,11 +235,14 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	Input->BindAction(AimAction, ETriggerEvent::Completed, this, &AFNCharacter::OnAimStopped);
 	Input->BindAction(RollAction, ETriggerEvent::Started, this, &AFNCharacter::OnRoll);
 	Input->BindAction(ReloadAction, ETriggerEvent::Started, this, &AFNCharacter::OnReload);
-	Input->BindAction(MeleeAction, ETriggerEvent::Started, this, &AFNCharacter::OnMelee);
 	Input->BindAction(RestartAction, ETriggerEvent::Started, this, &AFNCharacter::OnRestart);
 	Input->BindAction(Weapon1Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon1);
 	Input->BindAction(Weapon2Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon2);
 	Input->BindAction(Weapon3Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon3);
+	for (int32 i = 0; i < 4; ++i)
+	{
+		Input->BindAction(AbilityActions[i], ETriggerEvent::Started, this, &AFNCharacter::OnAbility, i);
+	}
 	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
 }
 
@@ -418,6 +427,27 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 		}
 		DrawDebugPoint(GetWorld(), Impact, 8.f, FColor(255, 230, 160), false, 0.1f);
 	}
+}
+
+void AFNCharacter::CycleWeapon(int32 Dir)
+{
+	for (int32 Step = 1; Step <= 3; ++Step)
+	{
+		const EFNWeapon Next = static_cast<EFNWeapon>((static_cast<int32>(Weapon) + Dir * Step + 3) % 3);
+		if (HasWeapon(Next))
+		{
+			SelectWeapon(Next);
+			return;
+		}
+	}
+}
+
+void AFNCharacter::OnAbility(int32 Slot)
+{
+	// Skill gems are not in the demo yet: the slots show the future layout.
+	ShowMessage(IsAbilitySlotOpen(Slot)
+		? FString::Printf(TEXT("Слот %d пуст — камень-навык ещё не найден"), Slot + 1)
+		: FString(TEXT("Слот 4 — ульта. Откроется в Нави")));
 }
 
 void AFNCharacter::SelectWeapon(EFNWeapon W)
@@ -638,28 +668,43 @@ void AFNCharacter::Revive()
 
 void AFNCharacter::OnMelee()
 {
-	if (bDead || bRolling || Stamina < MeleeCost || Stage == EFNStage::Spark || bTreeOpen)
+	if (bDead || bRolling || bTreeOpen || MeleeCooldown > 0.f)
 	{
 		return;
 	}
-	Stamina -= MeleeCost;
-	StaminaDelay = 0.8f;
 
-	const FVector Center = GetActorLocation() + GetActorForwardVector() * 150.f;
+	// Per stage: Spark = flash around the ember, Skeleton = a bare-hand blow, Flesh = melee weapon [D].
+	float Damage = 45.f, Radius = 180.f, Reach = 170.f, Cost = MeleeCost, Cooldown = 0.7f;
+	FColor Tint(200, 200, 200);
+	switch (Stage)
+	{
+	case EFNStage::Spark:    Damage = 15.f; Radius = 260.f; Reach = 0.f;   Cost = 10.f; Cooldown = 0.8f; Tint = FColor(90, 230, 255); break;
+	case EFNStage::Skeleton: Damage = 25.f; Radius = 120.f; Reach = 140.f; Cost = 12.f; Cooldown = 0.45f; Tint = FColor(230, 225, 205); break;
+	case EFNStage::Flesh:    Damage = MeleeDamage + 5.f; break;
+	}
+	if (Stamina < Cost)
+	{
+		return;
+	}
+	Stamina -= Cost;
+	StaminaDelay = 0.8f;
+	MeleeCooldown = Cooldown;
+
+	const FVector Center = GetActorLocation() + GetActorForwardVector() * Reach;
 	TArray<FOverlapResult> Overlaps;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(FNMelee), false, this);
-	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(180.f), Params);
+	GetWorld()->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Radius), Params);
 
 	TSet<AActor*> Damaged;
 	for (const FOverlapResult& O : Overlaps)
 	{
 		AActor* A = O.GetActor();
-		if (A && !Damaged.Contains(A))
+		if (A && A != this && !Damaged.Contains(A))
 		{
 			Damaged.Add(A);
 			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>())
 			{
-				if (H->ApplyDamage(MeleeDamage * (1.f + TreeMods.Melee), this) > 0.f && TreeMods.MeleeHeal > 0.f)
+				if (H->ApplyDamage(Damage * (1.f + TreeMods.Melee), this) > 0.f && TreeMods.MeleeHeal > 0.f)
 				{
 					Health->Health = FMath::Min(Health->MaxHealth, Health->Health + TreeMods.MeleeHeal);
 				}
@@ -668,7 +713,12 @@ void AFNCharacter::OnMelee()
 			}
 		}
 	}
-	DrawDebugSphere(GetWorld(), Center, 180.f, 12, FColor(200, 200, 200), false, 0.15f);
+	DrawDebugSphere(GetWorld(), Center, Radius, 16, Tint, false, 0.15f);
+	if (Stage == EFNStage::Spark)
+	{
+		MeleeFlash = 0.12f; // the ember flares
+		SparkLight->SetIntensity(60000.f);
+	}
 }
 
 void AFNCharacter::OnRestart()
@@ -792,6 +842,14 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	if (bWantsFire && !bRolling && !bReloading && FireCooldown <= 0.f && Controller && !bTreeOpen)
 	{
 		FireShot();
+	}
+
+	// Melee timers and the Spark's flare.
+	MeleeCooldown = FMath::Max(0.f, MeleeCooldown - DeltaSeconds);
+	if (MeleeFlash > 0.f)
+	{
+		MeleeFlash -= DeltaSeconds;
+		if (MeleeFlash <= 0.f && Stage == EFNStage::Spark) { SparkLight->SetIntensity(12000.f); }
 	}
 
 	// Startle at thunder: short camera jolt.
