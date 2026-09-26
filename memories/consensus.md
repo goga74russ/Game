@@ -155,6 +155,7 @@ UE5 (директор ставит VS 2022 + Epic Launcher + UE5 на D:). C++/�
 - Проба деда-навьи: концепт и модель в Meshy готовы у директора; ждём FBX (с ригом) → материал «навья» → лавки Сухоречья.
 - Скелет героя: Fab «Free Pack - Human Skeleton» (PolyOne Studio, статичная модель из 21 детали) → авториг Mixamo → `/Game/Characters/Skeleton/SK_HeroSkeleton`. В игре — `UPoseableMeshComponent`, покостный ретаргет со скрытого Wraith (22 кости, выравнивание A/T-позы). Стойка, бег, прыжок проверены кадрами. Сырьё — в `game/FadedNav/Import/`, контент — в `Content/Characters/`, оба не в публичном репо. Тестовые ключи: `-StartSkeleton`, `-PoseShot`, `-ShowWraith`.
 - Плоть: рекомендация — MetaHuman на риге Epic (решение за директором).
+- UI: макет `docs/ui/hud_mockup_v1.html` принят директором как есть (Ruslan Display + Cormorant, тлеющая HP, SVG-иконки). Перенос в игру — по команде директора.
 
 ## Следующий шаг
 Собрать и проверить мобов (директор). Затем эволюция Искра → Скелет → Плоть по счётчику убийств.
