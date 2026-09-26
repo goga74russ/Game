@@ -40,8 +40,8 @@
 **Главный мотив (не меняется):** исполинский дуб-громоотвод — ствол, на ветвях которого висят острова, а с вершины в небо тянется медный/железный шпиль с резным навершием. Виден из любой точки. Узнаваемость держат: силуэт дуба-шпиля, парящие острова-комья с корнями вниз, резные столбы-громовики (шестилучевой «громовой знак» как орнамент), грозовой фронт всегда слева-вверху.
 
 ### Явь — память с трещинами (светлая)
-- **Палитра:** небо после грозы #A9C4D6, кучевые #E8E2D2, дубовая кора #5A4A36, мох и трава #7E9A5A, медь-патина #6FA890, тёплый край солнца #F2C98A. Трещины памяти: выцветание в #D8D4C8 и «пустоты» #F1EEE6.
-- **Свет:** ясный, золотой час после грозы, мокрый блеск, длинные тени. Молнии далеко и красиво.
+- **Палитра:** небо после грозы #A9C4D6, кучевые #E8E2D2, дубовая кора #5A4A36, сухая трава #A8996A, медь-патина #6FA890, тёплый край солнца #F2C98A. Трещины памяти: выцветание в #D8D4C8 и «пустоты» #F1EEE6.
+- **Свет:** сухая гроза (дождя в Высях Яви нет — `foundation_perun_v0.1.md` §6.1, §6.5), золотой косой свет, пыль и статика в воздухе, сухой блеск остекленевшего песка, длинные тени. Молнии далеко и красиво. *Правка 2026-09-26: прежний «мокрый блеск» противоречил утверждённой сухой грозе.*
 - **Как читается «память»:** края кадра выцветают как старая фотография; некоторые острова без текстуры (грунт-холст), трещины светлые, а не тёмные — пустота белая, как забытое.
 - **Риск:** светлые трещины рядом с серебром треб. Трещины без ореола и без пульса.
 
@@ -80,7 +80,7 @@
 
 **Концепт-арт, окружение — Явь:**
 ```
-Concept art, environment keyframe, painterly photorealism, dark fantasy Slavic myth. Colossal ancient oak tree rising into the sky, a tall copper lightning rod spire with carved finial on its crown, floating earth islands with dangling roots hanging from its branches. Just after a thunderstorm, golden hour, wet surfaces glistening, distant lightning on the upper left. Carved wooden pillars with six-petal thunder rosette ornaments, embroidered linen ribbons on branches. The image edges fade like an old faded photograph, some islands unfinished as bare canvas, pale white cracks in reality like forgotten memory. Palette: pale storm blue sky, cream clouds, oak brown, moss green, verdigris copper, warm gold light. Melancholic, beautiful, sense of loss. Wide shot, strong silhouette of the oak spire, 16:9, no text, no people.
+Concept art, environment keyframe, painterly photorealism, dark fantasy Slavic myth. Colossal ancient oak tree rising into the sky, a tall copper lightning rod spire with carved finial on its crown, floating earth islands with dangling roots hanging from its branches. Dry thunderstorm with no rain, golden hour, dust and static in low slanting light, dry stiff grass, glassy fused sand glinting, empty wooden buckets, distant lightning on the upper left, no puddles, no wet surfaces. Carved wooden pillars with six-petal thunder rosette ornaments, embroidered linen ribbons on branches. The image edges fade like an old faded photograph, some islands unfinished as bare canvas, pale white cracks in reality like forgotten memory. Palette: pale storm blue sky, cream clouds, oak brown, dry ochre grass, verdigris copper, warm gold light. Melancholic, beautiful, sense of loss. Wide shot, strong silhouette of the oak spire, 16:9, no text, no people.
 ```
 
 **Концепт-арт, окружение — Навь:**
