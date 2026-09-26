@@ -13,33 +13,33 @@ UFNSkillTree::UFNSkillTree()
 
 const TArray<FFNNode>& UFNSkillTree::Nodes()
 {
-	// Names in English until the UI font with Cyrillic arrives (stage 1). Russian names in comments.
+	// Russian names: the Canvas font renders Cyrillic.
 	static const TArray<FFNNode> Data = {
-		/* 0 */ { TEXT("Spark"), TEXT("Where every path begins."), 0.50f, 0.62f, K::Root, { 1, 8, 15, 16 } },
+		/* 0 */ { TEXT("Искра"), TEXT("С неё начинается любой путь."), 0.50f, 0.62f, K::Root, { 1, 8, 15, 16 } },
 		// --- Thunder branch (ranged): Гром ---
-		/* 1 */ { TEXT("+10% ranged damage"), TEXT("Shots hit harder."), 0.41f, 0.56f, K::Small, { 0, 2 } },
-		/* 2 */ { TEXT("+25% ammo reserve"), TEXT("Carry more rounds."), 0.34f, 0.48f, K::Small, { 1, 3, 4 } },
-		/* 3 */ { TEXT("Thunder Trail"), TEXT("+20% fire rate. (Громовой Шлейф)"), 0.26f, 0.40f, K::Notable, { 2, 6, 18 } },
-		/* 4 */ { TEXT("+10% ranged damage"), TEXT("Shots hit harder."), 0.38f, 0.39f, K::Small, { 2, 5 } },
-		/* 5 */ { TEXT("Steel Charm"), TEXT("+30% weak point damage. (Заговор на Сталь)"), 0.34f, 0.29f, K::Notable, { 4, 7 } },
-		/* 6 */ { TEXT("+15% reload speed"), TEXT("Faster reloads."), 0.20f, 0.29f, K::Small, { 3, 7 } },
-		/* 7 */ { TEXT("Ball Lightning"), TEXT("KEYSTONE: 30% MORE ranged damage, -20% max health. (Шаровая Молния)"), 0.27f, 0.18f, K::Keystone, { 5, 6 } },
+		/* 1 */ { TEXT("+10% урона выстрелов"), TEXT("Выстрелы бьют сильнее."), 0.41f, 0.56f, K::Small, { 0, 2 } },
+		/* 2 */ { TEXT("+25% запаса патронов"), TEXT("Больше патронов с собой."), 0.34f, 0.48f, K::Small, { 1, 3, 4 } },
+		/* 3 */ { TEXT("Громовой Шлейф"), TEXT("+20% к скорострельности."), 0.26f, 0.40f, K::Notable, { 2, 6, 18 } },
+		/* 4 */ { TEXT("+10% урона выстрелов"), TEXT("Выстрелы бьют сильнее."), 0.38f, 0.39f, K::Small, { 2, 5 } },
+		/* 5 */ { TEXT("Заговор на Сталь"), TEXT("+30% урона по слабым местам."), 0.34f, 0.29f, K::Notable, { 4, 7 } },
+		/* 6 */ { TEXT("+15% скорости перезарядки"), TEXT("Перезарядка быстрее."), 0.20f, 0.29f, K::Small, { 3, 7 } },
+		/* 7 */ { TEXT("Шаровая Молния"), TEXT("КЛЮЧЕВОЙ: урон выстрелов в 1,3 раза БОЛЬШЕ, но −20% здоровья."), 0.27f, 0.18f, K::Keystone, { 5, 6 } },
 		// --- Bone branch (melee / survival): Кость ---
-		/* 8 */ { TEXT("+15 max health"), TEXT("Tougher."), 0.59f, 0.56f, K::Small, { 0, 9 } },
-		/* 9 */ { TEXT("+25% melee damage"), TEXT("Heavier blows."), 0.66f, 0.48f, K::Small, { 8, 10, 11 } },
-		/* 10 */ { TEXT("Blood Yar"), TEXT("Melee hits heal 6 health. (Ярь Крови)"), 0.74f, 0.40f, K::Notable, { 9, 13, 19 } },
-		/* 11 */ { TEXT("+20% stamina regen"), TEXT("Recover faster."), 0.62f, 0.39f, K::Small, { 9, 12 } },
-		/* 12 */ { TEXT("Tempering"), TEXT("15% less damage taken. (Закалка)"), 0.66f, 0.29f, K::Notable, { 11, 14 } },
-		/* 13 */ { TEXT("+15 max health"), TEXT("Tougher."), 0.80f, 0.29f, K::Small, { 10, 14 } },
-		/* 14 */ { TEXT("Bone Rampart"), TEXT("KEYSTONE: +0.15 s dodge immunity, 10% less damage taken (MORE), -15% fire rate. (Костяной Вал)"), 0.73f, 0.18f, K::Keystone, { 12, 13 } },
+		/* 8 */ { TEXT("+15 к здоровью"), TEXT("Крепче."), 0.59f, 0.56f, K::Small, { 0, 9 } },
+		/* 9 */ { TEXT("+25% урона удара"), TEXT("Удары тяжелее."), 0.66f, 0.48f, K::Small, { 8, 10, 11 } },
+		/* 10 */ { TEXT("Ярь Крови"), TEXT("Каждый удар вблизи лечит на 6."), 0.74f, 0.40f, K::Notable, { 9, 13, 19 } },
+		/* 11 */ { TEXT("+20% восстановления выносливости"), TEXT("Быстрее переводишь дух."), 0.62f, 0.39f, K::Small, { 9, 12 } },
+		/* 12 */ { TEXT("Закалка"), TEXT("Получаешь на 15% меньше урона."), 0.66f, 0.29f, K::Notable, { 11, 14 } },
+		/* 13 */ { TEXT("+15 к здоровью"), TEXT("Крепче."), 0.80f, 0.29f, K::Small, { 10, 14 } },
+		/* 14 */ { TEXT("Костяной Вал"), TEXT("КЛЮЧЕВОЙ: +0,15 с неуязвимости при уклонении, в 1,1 раза МЕНЬШЕ урона, −15% скорострельности."), 0.73f, 0.18f, K::Keystone, { 12, 13 } },
 		// --- Path branch (mobility): Путь ---
-		/* 15 */ { TEXT("-20% dodge cost"), TEXT("Dodge more often."), 0.44f, 0.72f, K::Small, { 0, 17, 20 } },
-		/* 16 */ { TEXT("+8% move speed"), TEXT("Move faster."), 0.56f, 0.72f, K::Small, { 0, 17 } },
-		/* 17 */ { TEXT("Light Step"), TEXT("+15% move speed, -25% dodge cost. (Лёгкая Стопа)"), 0.50f, 0.82f, K::Notable, { 15, 16, 20 } },
+		/* 15 */ { TEXT("−20% цены уклонения"), TEXT("Уклоняешься чаще."), 0.44f, 0.72f, K::Small, { 0, 17, 20 } },
+		/* 16 */ { TEXT("+8% скорости"), TEXT("Быстрее ходишь."), 0.56f, 0.72f, K::Small, { 0, 17 } },
+		/* 17 */ { TEXT("Лёгкая Стопа"), TEXT("+15% скорости, уклонение на 25% дешевле."), 0.50f, 0.82f, K::Notable, { 15, 16, 20 } },
 		// --- extra smalls ---
-		/* 18 */ { TEXT("+10% fire rate"), TEXT("Faster shots."), 0.19f, 0.46f, K::Small, { 3 } },
-		/* 19 */ { TEXT("+15% melee damage"), TEXT("Heavier blows."), 0.81f, 0.46f, K::Small, { 10 } },
-		/* 20 */ { TEXT("+15% reload speed"), TEXT("Faster reloads."), 0.40f, 0.84f, K::Small, { 15, 17 } },
+		/* 18 */ { TEXT("+10% скорострельности"), TEXT("Стреляешь чаще."), 0.19f, 0.46f, K::Small, { 3 } },
+		/* 19 */ { TEXT("+15% урона удара"), TEXT("Удары тяжелее."), 0.81f, 0.46f, K::Small, { 10 } },
+		/* 20 */ { TEXT("+15% скорости перезарядки"), TEXT("Перезарядка быстрее."), 0.40f, 0.84f, K::Small, { 15, 17 } },
 	};
 	return Data;
 }

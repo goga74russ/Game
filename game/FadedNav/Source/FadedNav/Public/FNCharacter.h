@@ -47,6 +47,9 @@ public:
 	EFNStage GetStage() const { return Stage; }
 	EFNWeapon GetWeapon() const { return Weapon; }
 	int32 GetScatterAmmo() const { return ScatterAmmo; }
+	bool HasWeapon(EFNWeapon W) const { return W == EFNWeapon::Plasma || (W == EFNWeapon::Rifle && bHasRifle) || (W == EFNWeapon::Scatter && bHasScatter); }
+	FLinearColor GetSparkColor() const { return SparkColor; }
+	int32 GetKills() const;
 	void GiveWeapon(EFNWeapon NewWeapon);
 	void GiveArmor(float Bonus);
 	void RestAtTreba(const FVector& At);    // heal, refill, set respawn point

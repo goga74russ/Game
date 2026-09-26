@@ -4,7 +4,8 @@
 #include "GameFramework/HUD.h"
 #include "FNHUD.generated.h"
 
-// Tech-test HUD drawn on Canvas. Labels are ASCII until a Cyrillic UI font is set up (UMG, stage 1).
+// Chapter HUD on Canvas, layout after Remnant 2 (reference only, no assets): stage + health bottom-left,
+// weapon bottom-right, zone + skill points top-right, boss bar and subtitles bottom-centre. Russian text.
 UCLASS()
 class FADEDNAV_API AFNHUD : public AHUD
 {
@@ -24,5 +25,6 @@ private:
 	void DrawBar(float X, float Y, float W, float H, float Ratio, const FLinearColor& Fill);
 	void DrawCentered(const FString& Text, float Y, const FLinearColor& Color, float Scale);
 	void DrawTree(class AFNCharacter* Player);
+	void DrawPanel(float X, float Y, float PW, float PH);
 	int32 HoveredNode = -1;
 };

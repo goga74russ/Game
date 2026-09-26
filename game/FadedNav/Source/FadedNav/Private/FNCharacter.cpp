@@ -130,7 +130,7 @@ void AFNCharacter::BeginPlay()
 	if (bChapter)
 	{
 		SetStage(EFNStage::Spark, false);
-		ShowMessage(TEXT("You are a Spark. Five kills to take shape."));
+		ShowMessage(TEXT("Ты — Искра. Пять побед — и обретёшь остов."));
 	}
 	else
 	{
@@ -435,8 +435,8 @@ void AFNCharacter::SelectWeapon(EFNWeapon W)
 
 void AFNCharacter::GiveWeapon(EFNWeapon NewWeapon)
 {
-	if (NewWeapon == EFNWeapon::Rifle) { bHasRifle = true; ShowMessage(TEXT("Rifle found  [2]")); }
-	if (NewWeapon == EFNWeapon::Scatter) { bHasScatter = true; ShowMessage(TEXT("Scattergun found  [3]")); }
+	if (NewWeapon == EFNWeapon::Rifle) { bHasRifle = true; ShowMessage(TEXT("Найдено ружьё  [2]")); }
+	if (NewWeapon == EFNWeapon::Scatter) { bHasScatter = true; ShowMessage(TEXT("Найден дробовик  [3]")); }
 	if (Stage != EFNStage::Spark)
 	{
 		Weapon = NewWeapon;
@@ -448,7 +448,7 @@ void AFNCharacter::GiveArmor(float Bonus)
 	ArmorBonus += Bonus;
 	ApplyStats();
 	Health->Health = FMath::Min(Health->MaxHealth, Health->Health + Bonus);
-	ShowMessage(FString::Printf(TEXT("Armour +%.0f HP"), Bonus));
+	ShowMessage(FString::Printf(TEXT("Доспех: +%.0f к здоровью"), Bonus));
 }
 
 void AFNCharacter::RestAtTreba(const FVector& At)
@@ -457,7 +457,7 @@ void AFNCharacter::RestAtTreba(const FVector& At)
 	Health->Health = Health->MaxHealth;
 	Stamina = MaxStamina;
 	Reserve = FMath::Max(Reserve, 72);
-	ShowMessage(TEXT("Treba: rested. You will return here."));
+	ShowMessage(TEXT("Треба. Отдых — сюда ты и вернёшься."));
 }
 
 void AFNCharacter::ShowMessage(const FString& Text)
@@ -525,8 +525,14 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 	{
 		Health->bInvulnerable = true;
 		IFramesRemaining = 1.5f;
-		ShowMessage(Stage == EFNStage::Skeleton ? TEXT("The Spark gathers bones.  (dash)") : TEXT("Flesh returns.  (roll, melee, full health)"));
+		ShowMessage(Stage == EFNStage::Skeleton ? TEXT("Искра собирает кости.  (рывок)") : TEXT("Плоть вернулась.  (перекат, удар, полное здоровье)"));
 	}
+}
+
+int32 AFNCharacter::GetKills() const
+{
+	const AFNGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<AFNGameMode>() : nullptr;
+	return GM ? GM->GetKills() : 0;
 }
 
 int32 AFNCharacter::GetSkillPoints() const
@@ -541,14 +547,14 @@ void AFNCharacter::TryAllocate(int32 Node)
 	if (Tree->Allocate(Node, GetSkillPoints()))
 	{
 		ApplyStats();
-		ShowMessage(FString::Printf(TEXT("Learned: %s"), UFNSkillTree::Nodes()[Node].Name));
+		ShowMessage(FString::Printf(TEXT("Изучено: %s"), UFNSkillTree::Nodes()[Node].Name));
 	}
 }
 
 void AFNCharacter::FindRune(int32 Node)
 {
 	Tree->FindRune(Node);
-	ShowMessage(FString::Printf(TEXT("Rune-key found: %s  (Tab)"), UFNSkillTree::Nodes()[Node].Name));
+	ShowMessage(FString::Printf(TEXT("Руна-ключ: %s  (Tab)"), UFNSkillTree::Nodes()[Node].Name));
 }
 
 void AFNCharacter::ApplyStats()
@@ -627,7 +633,7 @@ void AFNCharacter::Revive()
 	SetStage(Stage, false);
 	Stamina = MaxStamina;
 	LastSafeLocation = Checkpoint;
-	ShowMessage(TEXT("The Spark rekindles."));
+	ShowMessage(TEXT("Искра разгорается вновь."));
 }
 
 void AFNCharacter::OnMelee()
