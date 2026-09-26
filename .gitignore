@@ -25,3 +25,8 @@ Thumbs.db
 # Marketplace/Fab content: licensed for use, not for redistribution in a public repo.
 # Re-add from the Epic launcher (Fab library) on a new machine.
 game/FadedNav/Content/Paragon*/
+game/FadedNav/Content/Fab/
+
+# Visual Studio / IDE generated
+*.slnx
+.vsconfig
