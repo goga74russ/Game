@@ -26,5 +26,9 @@ private:
 	void DrawCentered(const FString& Text, float Y, const FLinearColor& Color, float Scale);
 	void DrawTree(class AFNCharacter* Player);
 	void DrawPanel(float X, float Y, float PW, float PH);
+	void DrawRing(float CX, float CY, float R, const FLinearColor& C, float Thickness);
+	void FillDisc(float CX, float CY, float R, const FLinearColor& C);
+	float ShownHealth = -1.f;
+	float ShownBoss = -1.f;
 	int32 HoveredNode = -1;
 };

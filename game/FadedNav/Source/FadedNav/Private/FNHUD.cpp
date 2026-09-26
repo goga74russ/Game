@@ -21,7 +21,9 @@ void AFNHUD::DrawCentered(const FString& Text, float Y, const FLinearColor& Colo
 	UFont* Font = GEngine->GetLargeFont();
 	float TW = 0.f, TH = 0.f;
 	GetTextSize(Text, TW, TH, Font, Scale);
-	DrawText(Text, Color, (Canvas->ClipX - TW) * 0.5f, Y, Font, Scale);
+	const float X = (Canvas->ClipX - TW) * 0.5f;
+	DrawText(Text, FLinearColor(0.f, 0.f, 0.f, 0.85f * Color.A), X + 1.5f, Y + 1.5f, Font, Scale); // drop shadow for readability
+	DrawText(Text, Color, X, Y, Font, Scale);
 }
 
 void AFNHUD::DrawTree(AFNCharacter* Player)
@@ -103,14 +105,17 @@ void AFNHUD::NotifyHitBoxEndCursorOver(FName BoxName)
 
 namespace
 {
-	// HUD palette (style_v0.1): dark translucent panels with a thin wax-gold edge.
-	const FLinearColor PanelBg(0.02f, 0.02f, 0.03f, 0.62f);
-	const FLinearColor Edge(0.78f, 0.6f, 0.3f, 0.85f);
-	const FLinearColor TextMain(0.95f, 0.92f, 0.85f);
-	const FLinearColor TextDim(0.7f, 0.68f, 0.62f);
-	const FLinearColor HealthRed(0.72f, 0.16f, 0.12f);
-	const FLinearColor StaminaTone(0.82f, 0.74f, 0.45f);
+	// Remnant-2-like look drawn from scratch (no third-party art): thin dark frames, red health with notches,
+	// round relic slot, long bottom boss bar with a trailing damage chip, weapon silhouette + big ammo, minimap.
+	const FLinearColor FrameDark(0.02f, 0.02f, 0.02f, 0.78f);
+	const FLinearColor FrameLine(0.55f, 0.52f, 0.46f, 0.9f);
+	const FLinearColor TextMain(0.93f, 0.91f, 0.86f);
+	const FLinearColor TextDim(0.66f, 0.64f, 0.6f);
+	const FLinearColor HealthRed(0.66f, 0.07f, 0.06f);
+	const FLinearColor HealthChip(0.95f, 0.85f, 0.75f);
+	const FLinearColor StaminaTone(0.86f, 0.84f, 0.76f);
 	const FLinearColor Gold(1.f, 0.78f, 0.35f);
+	const FLinearColor BossRed(0.62f, 0.05f, 0.05f);
 
 	const TCHAR* ZoneName(float XMetres)
 	{
@@ -122,13 +127,35 @@ namespace
 		if (XMetres < 750.f) return TEXT("Кумирная горка");
 		return TEXT("Громовой гребень");
 	}
+
+	// Path of the chapter for the minimap (metres, X north).
+	const FVector2D MapPath[] = { {-30, -10}, {0, 0}, {45, 12}, {140, 38}, {180, 40}, {280, -20}, {420, -20}, {445, 0}, {525, 10}, {560, 20}, {640, 10}, {698, -8}, {720, 0}, {742, 0}, {850, 0}, {875, 12} };
 }
 
 void AFNHUD::DrawPanel(float X, float Y, float PW, float PH)
 {
-	DrawRect(PanelBg, X, Y, PW, PH);
-	DrawRect(Edge, X, Y, PW, 1.f);
-	DrawRect(Edge * FLinearColor(1.f, 1.f, 1.f, 0.4f), X, Y + PH - 1.f, PW, 1.f);
+	DrawRect(FrameDark, X, Y, PW, PH);
+	DrawLine(X, Y, X + PW, Y, FrameLine, 1.f);
+	DrawLine(X, Y + PH, X + PW, Y + PH, FrameLine * FLinearColor(1, 1, 1, 0.5f), 1.f);
+}
+
+void AFNHUD::DrawRing(float CX, float CY, float R, const FLinearColor& C, float Thickness)
+{
+	constexpr int32 Seg = 40;
+	for (int32 i = 0; i < Seg; ++i)
+	{
+		const float A0 = 2.f * PI * i / Seg, A1 = 2.f * PI * (i + 1) / Seg;
+		DrawLine(CX + R * FMath::Cos(A0), CY + R * FMath::Sin(A0), CX + R * FMath::Cos(A1), CY + R * FMath::Sin(A1), C, Thickness);
+	}
+}
+
+void AFNHUD::FillDisc(float CX, float CY, float R, const FLinearColor& C)
+{
+	for (float Dy = -R; Dy <= R; Dy += 1.f)
+	{
+		const float Half = FMath::Sqrt(FMath::Max(0.f, R * R - Dy * Dy));
+		DrawRect(C, CX - Half, CY + Dy, 2.f * Half, 1.f);
+	}
 }
 
 void AFNHUD::DrawHUD()
@@ -144,6 +171,7 @@ void AFNHUD::DrawHUD()
 	UFont* Small = GEngine->GetSmallFont();
 	UFont* Medium = GEngine->GetMediumFont();
 	UFont* Large = GEngine->GetLargeFont();
+	const float Dt = GetWorld()->GetDeltaSeconds();
 
 	AFNCharacter* Player = Cast<AFNCharacter>(GetOwningPawn());
 	if (Player && Player->IsTreeOpen())
@@ -158,128 +186,188 @@ void AFNHUD::DrawHUD()
 		break;
 	}
 
-	// Controls: only for the first seconds of play.
 	if (GetWorld()->GetTimeSeconds() < 15.0)
 	{
-		DrawPanel(20.f, 20.f, 560.f, 30.f);
-		DrawText(TEXT("WASD — ход   Мышь — обзор   ЛКМ — огонь   ПКМ — прицел   Пробел — уклонение   F — удар   R — перезарядка   1/2/3 — оружие   Tab — дерево"),
-			TextDim, 30.f, 27.f, Small, 0.85f);
+		DrawCentered(TEXT("WASD — ход   ЛКМ — огонь   ПКМ — прицел   Пробел — уклонение   F — удар   R — перезарядка   1/2/3 — оружие   Tab — дерево"),
+			H * 0.9f, TextDim, 0.8f);
 	}
 
 	if (Player)
 	{
-		// ---- Crosshair: small centre dot + ticks, gold flash on hit, wider on a weak point.
+		// ---- Crosshair: small ring + dot; ring tightens when aiming, warms on hit.
 		{
-			const bool bHitFlash = Player->GetTimeSinceHit() < 0.12f;
-			const float S = bHitFlash && Player->WasLastHitWeak() ? 10.f : 6.f;
-			const FLinearColor CH = bHitFlash ? Gold : FLinearColor(1.f, 1.f, 1.f, 0.85f);
-			const float CX = W * 0.5f, CY = H * 0.5f;
-			DrawRect(CH, CX - 1.f, CY - 1.f, 2.f, 2.f);
-			DrawRect(CH, CX - S - 7.f, CY - 0.5f, S, 1.5f);
-			DrawRect(CH, CX + 7.f, CY - 0.5f, S, 1.5f);
-			DrawRect(CH, CX - 0.5f, CY + 7.f, 1.5f, S);
+			const bool bHit = Player->GetTimeSinceHit() < 0.12f;
+			const FLinearColor C = bHit ? (Player->WasLastHitWeak() ? Gold : FLinearColor(1.f, 0.6f, 0.4f)) : FLinearColor(1.f, 1.f, 1.f, 0.8f);
+			const float R = Player->IsAiming() ? 9.f : 14.f;
+			DrawRing(W * 0.5f, H * 0.5f, R, C, 1.2f);
+			DrawRect(C, W * 0.5f - 1.f, H * 0.5f - 1.f, 2.f, 2.f);
+			if (bHit && Player->WasLastHitWeak())
+			{
+				DrawRing(W * 0.5f, H * 0.5f, R + 6.f, Gold, 1.f);
+			}
 		}
 
-		// ---- Bottom-left: stage emblem + health + stamina (Remnant 2 layout, our content).
+		// ---- Top-left: health (red, notched every 25) with trailing chip, stamina below.
 		{
-			const float X = 32.f, Y = H - 118.f;
-			static const TCHAR* StageNames[] = { TEXT("ИСКРА"), TEXT("СКЕЛЕТ"), TEXT("ПЛОТЬ") };
+			const float X = 36.f, Y = 34.f, BW = 360.f;
+			const float Ratio = Player->GetHealth()->GetRatio();
+			ShownHealth = ShownHealth < 0.f ? Ratio : FMath::FInterpTo(ShownHealth, Ratio, Dt, Ratio < ShownHealth ? 2.5f : 20.f);
+			DrawRect(FrameDark, X - 3.f, Y - 3.f, BW + 6.f, 22.f);
+			DrawRect(HealthChip, X, Y, BW * FMath::Max(ShownHealth, Ratio), 16.f);
+			DrawRect(HealthRed, X, Y, BW * Ratio, 16.f);
+			const float Max = Player->GetHealth()->MaxHealth;
+			for (float V = 25.f; V < Max; V += 25.f)
+			{
+				DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.5f), X + BW * (V / Max), Y, 1.5f, 16.f);
+			}
+			DrawRect(FrameDark, X - 3.f, Y + 22.f, BW * 0.75f + 6.f, 9.f);
+			DrawRect(StaminaTone, X, Y + 24.f, BW * 0.75f * Player->GetStaminaRatio(), 5.f);
+			static const TCHAR* StageNames[] = { TEXT("Искра"), TEXT("Скелет"), TEXT("Плоть") };
+			DrawText(FString::Printf(TEXT("%s  ·  %.0f"), StageNames[static_cast<int32>(Player->GetStage())], Player->GetHealth()->Health), TextDim, X, Y + 36.f, Small, 0.85f);
+		}
+
+		// ---- Bottom-left: round "relic" slot = the Spark's emblem, count = rune-keys found.
+		{
+			const float CX = 78.f, CY = H - 86.f, R = 34.f;
 			const int32 StageIdx = static_cast<int32>(Player->GetStage());
 			const FLinearColor Ember = Player->GetSparkColor();
-			const FLinearColor EmblemColor = StageIdx == 0 ? Ember : (StageIdx == 1 ? Ember * 0.45f + FLinearColor(0.4f, 0.38f, 0.33f) : FLinearColor(0.55f, 0.35f, 0.25f));
-
-			// Emblem: framed square with the stage colour (the "relic" slot of the reference).
-			DrawRect(Edge, X - 2.f, Y - 2.f, 68.f, 68.f);
-			DrawRect(FLinearColor(0.03f, 0.03f, 0.04f, 0.9f), X, Y, 64.f, 64.f);
-			DrawRect(EmblemColor, X + 14.f, Y + 14.f, 36.f, 36.f);
-			DrawText(StageNames[StageIdx], TextMain, X, Y + 70.f, Small, 0.8f);
-
-			const float BX = X + 80.f;
-			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), BX - 1.f, Y + 17.f, 302.f, 16.f);
-			DrawRect(HealthRed, BX, Y + 18.f, 300.f * Player->GetHealth()->GetRatio(), 14.f);
-			DrawText(FString::Printf(TEXT("%.0f / %.0f"), Player->GetHealth()->Health, Player->GetHealth()->MaxHealth), TextMain, BX + 6.f, Y + 17.f, Small, 0.8f);
-			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), BX - 1.f, Y + 38.f, 242.f, 7.f);
-			DrawRect(StaminaTone, BX, Y + 39.f, 240.f * Player->GetStaminaRatio(), 5.f);
+			const FLinearColor Core = StageIdx == 0 ? Ember : (StageIdx == 1 ? Ember * 0.4f + FLinearColor(0.35f, 0.33f, 0.3f) : FLinearColor(0.5f, 0.12f, 0.1f));
+			FillDisc(CX, CY, R + 4.f, FrameDark);
+			FillDisc(CX, CY, R - 6.f, Core * 0.55f);
+			FillDisc(CX, CY, R - 14.f, Core);
+			DrawRing(CX, CY, R, FrameLine, 2.f);
+			DrawText(FString::FromInt(Player->GetTree()->NumRunesFound()), TextMain, CX + R - 2.f, CY - R - 6.f, Medium, 1.1f);
+			// Small consumable-like pips: skill points waiting.
+			for (int32 i = 0; i < FMath::Min(Player->GetSkillPoints(), 6); ++i)
+			{
+				DrawRect(Gold, CX + R + 14.f + i * 12.f, CY + 18.f, 8.f, 8.f);
+			}
 		}
 
-		// ---- Bottom-right: current weapon, big magazine / reserve, other weapons small.
+		// ---- Bottom-right: weapon silhouette, big magazine / small reserve, round mod slot, secondary above.
 		{
-			const float PW = 300.f, PH = 96.f, X = W - PW - 32.f, Y = H - PH - 30.f;
-			DrawPanel(X, Y, PW, PH);
+			const float X = W - 360.f, Y = H - 104.f;
 			static const TCHAR* WeaponNames[] = { TEXT("Плазма"), TEXT("Ружьё"), TEXT("Дробовик") };
 			const EFNWeapon Cur = Player->GetWeapon();
-			DrawText(WeaponNames[static_cast<int32>(Cur)], TextMain, X + 14.f, Y + 8.f, Medium, 0.9f);
 
+			// Silhouette drawn from rectangles (placeholder art).
+			const FLinearColor Sil(0.8f, 0.78f, 0.72f, 0.9f);
+			if (Cur == EFNWeapon::Plasma)
+			{
+				FillDisc(X + 60.f, Y + 44.f, 16.f, Player->GetSparkColor());
+				DrawRing(X + 60.f, Y + 44.f, 22.f, Sil, 1.f);
+			}
+			else
+			{
+				const float Len = Cur == EFNWeapon::Rifle ? 150.f : 110.f;
+				DrawRect(Sil, X, Y + 38.f, Len, 8.f);                       // barrel + receiver
+				DrawRect(Sil, X + Len - 50.f, Y + 38.f, 50.f, 14.f);        // body
+				DrawRect(Sil, X + Len - 12.f, Y + 44.f, 26.f, 22.f);        // stock
+				DrawRect(Sil, X + Len - 70.f, Y + 50.f, 10.f, 18.f);        // grip
+			}
+			DrawText(WeaponNames[static_cast<int32>(Cur)], TextDim, X, Y + 76.f, Small, 0.85f);
+
+			const float AX = X + 190.f;
 			if (Player->IsReloading())
 			{
-				DrawText(TEXT("перезарядка…"), Gold, X + 14.f, Y + 44.f, Medium, 1.f);
+				DrawText(TEXT("—"), Gold, AX, Y + 18.f, Large, 1.8f);
 			}
 			else if (Cur == EFNWeapon::Plasma)
 			{
-				DrawText(TEXT("∞"), Gold, X + 14.f, Y + 34.f, Large, 1.6f);
+				DrawText(TEXT("∞"), TextMain, AX, Y + 14.f, Large, 2.f);
 			}
 			else
 			{
 				const int32 Mag = Cur == EFNWeapon::Scatter ? Player->GetScatterAmmo() : Player->GetAmmo();
-				DrawText(FString::Printf(TEXT("%02d"), Mag), Mag == 0 ? HealthRed : Gold, X + 14.f, Y + 30.f, Large, 1.8f);
-				DrawText(FString::Printf(TEXT("%d"), Player->GetReserve()), TextDim, X + 110.f, Y + 56.f, Medium, 0.9f);
+				DrawText(FString::Printf(TEXT("%02d"), Mag), Mag == 0 ? FLinearColor(0.9f, 0.25f, 0.2f) : TextMain, AX, Y + 14.f, Large, 2.f);
+				DrawText(FString::Printf(TEXT("%02d"), Player->GetReserve()), TextDim, AX + 4.f, Y + 64.f, Medium, 0.85f);
 			}
 
-			// Weapon slots on the right edge of the panel.
+			// Round slot on the far right (the reference's mod icon): weapon number.
+			const float MX = W - 58.f, MY = Y + 44.f;
+			FillDisc(MX, MY, 22.f, FrameDark);
+			DrawRing(MX, MY, 22.f, FrameLine, 1.5f);
+			DrawText(FString::FromInt(static_cast<int32>(Cur) + 1), TextMain, MX - 5.f, MY - 10.f, Medium, 0.9f);
+
+			// Other owned weapons, small, above the block.
+			float SY = Y - 22.f;
 			for (int32 i = 0; i < 3; ++i)
 			{
 				const EFNWeapon Wp = static_cast<EFNWeapon>(i);
-				const bool bOwned = Player->HasWeapon(Wp);
-				const FLinearColor C = Wp == Cur ? Gold : (bOwned ? TextDim : FLinearColor(0.3f, 0.3f, 0.3f));
-				DrawText(FString::Printf(TEXT("%d  %s"), i + 1, bOwned ? WeaponNames[i] : TEXT("—")), C, X + 180.f, Y + 12.f + i * 24.f, Small, 0.85f);
+				if (Wp == Cur || !Player->HasWeapon(Wp)) { continue; }
+				DrawText(FString::Printf(TEXT("%d  %s"), i + 1, WeaponNames[i]), TextDim, W - 190.f, SY, Small, 0.8f);
+				SY -= 18.f;
 			}
 		}
 
-		// ---- Top-right: zone name, skill points notice, rune-keys.
+		// ---- Top-right: minimap (path of the chapter, player dot), zone name, skill points notice.
 		{
-			const float PW = 300.f, X = W - PW - 32.f, Y = 24.f;
-			const bool bPoints = Player->GetSkillPoints() > 0;
-			DrawPanel(X, Y, PW, bPoints ? 84.f : 58.f);
-			DrawText(ZoneName(Player->GetActorLocation().X / 100.f), TextMain, X + 14.f, Y + 8.f, Medium, 0.9f);
-			DrawText(FString::Printf(TEXT("Руны-ключи: %d / 7      Убито: %d"), Player->GetTree()->NumRunesFound(), Player->GetKills()), TextDim, X + 14.f, Y + 34.f, Small, 0.85f);
-			if (bPoints)
+			const float MW = 190.f, MH = 150.f, X = W - MW - 30.f, Y = 26.f;
+			DrawRect(FrameDark, X, Y, MW, MH);
+			DrawLine(X, Y, X + MW, Y, FrameLine, 1.f);
+			const FVector P = Player->GetActorLocation() / 100.f;
+			auto ToMap = [&](const FVector2D& Mt) // north up, centred on the player, 1 px = 3 m
 			{
-				DrawText(FString::Printf(TEXT("Доступны очки навыков: %d   ▲ Tab"), Player->GetSkillPoints()), Gold, X + 14.f, Y + 56.f, Small, 0.9f);
+				return FVector2D(X + MW * 0.5f + (Mt.Y - P.Y) / 3.f, Y + MH * 0.5f - (Mt.X - P.X) / 3.f);
+			};
+			for (int32 i = 0; i + 1 < UE_ARRAY_COUNT(MapPath); ++i)
+			{
+				FVector2D A = ToMap(MapPath[i]), B = ToMap(MapPath[i + 1]);
+				const bool bIn = [&](const FVector2D& V) { return V.X > X && V.X < X + MW && V.Y > Y && V.Y < Y + MH; }(A)
+					&& [&](const FVector2D& V) { return V.X > X && V.X < X + MW && V.Y > Y && V.Y < Y + MH; }(B);
+				if (bIn) { DrawLine(A.X, A.Y, B.X, B.Y, FLinearColor(0.7f, 0.6f, 0.42f, 0.9f), 3.f); }
+			}
+			const FVector2D Arena = ToMap(FVector2D(720.f, 0.f));
+			if (Arena.X > X && Arena.X < X + MW && Arena.Y > Y && Arena.Y < Y + MH) { DrawRing(Arena.X, Arena.Y, 7.f, FLinearColor(0.8f, 0.2f, 0.2f), 1.5f); }
+			const FVector2D Treba = ToMap(FVector2D(645.f, 10.f));
+			if (Treba.X > X && Treba.X < X + MW && Treba.Y > Y && Treba.Y < Y + MH) { DrawRect(FLinearColor(0.75f, 0.82f, 1.f), Treba.X - 3.f, Treba.Y - 3.f, 6.f, 6.f); }
+			DrawRect(Gold, X + MW * 0.5f - 3.f, Y + MH * 0.5f - 3.f, 6.f, 6.f);
+
+			DrawText(ZoneName(P.X), TextMain, X, Y + MH + 6.f, Small, 0.95f);
+			if (Player->GetSkillPoints() > 0)
+			{
+				DrawText(FString::Printf(TEXT("Доступны очки навыков: %d  ⚠"), Player->GetSkillPoints()), TextMain, X, Y + MH + 26.f, Small, 0.85f);
 			}
 		}
 
-		// ---- Event messages (evolution, pickups, treba), upper centre.
+		// ---- Event messages, upper centre.
 		if (Player->GetMessageAge() < 3.5f && !Player->GetMessage().IsEmpty())
 		{
 			const float A = FMath::Clamp(3.5f - Player->GetMessageAge(), 0.f, 1.f);
-			DrawCentered(Player->GetMessage(), H * 0.2f, FLinearColor(1.f, 0.92f, 0.75f, A), 0.9f);
+			DrawCentered(Player->GetMessage(), H * 0.2f, FLinearColor(1.f, 0.92f, 0.78f, A), 0.9f);
 		}
 	}
 
-	// ---- Bottom-centre: boss bar (name + phase), subtitles sit above it.
+	// ---- Bottom-centre boss bar: name above, thin red bar in a dark frame, trailing damage chip.
 	const bool bBossBar = Boss && Boss->IsFightActive();
+	const float BarY = H - 46.f;
 	if (bBossBar)
 	{
-		const float BW = W * 0.42f, X = (W - BW) * 0.5f, Y = H - 58.f;
-		DrawCentered(FString::Printf(TEXT("Перун — наставник   ·   фаза %d"), Boss->GetPhase()), Y - 26.f, TextMain, 0.8f);
-		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.65f), X - 2.f, Y - 2.f, BW + 4.f, 12.f);
-		DrawRect(FLinearColor(0.62f, 0.55f, 0.9f), X, Y, BW * Boss->GetHealth()->GetRatio(), 8.f);
+		const float BW = W * 0.4f, X = (W - BW) * 0.5f;
+		const float Ratio = Boss->GetHealth()->GetRatio();
+		ShownBoss = ShownBoss < 0.f ? Ratio : FMath::FInterpTo(ShownBoss, Ratio, Dt, Ratio < ShownBoss ? 1.5f : 20.f);
+		DrawText(FString::Printf(TEXT("Перун, наставник   ·   фаза %d"), Boss->GetPhase()), FLinearColor(0.f, 0.f, 0.f, 0.85f), X + 1.5f, BarY - 20.5f, Small, 0.9f);
+		DrawText(FString::Printf(TEXT("Перун, наставник   ·   фаза %d"), Boss->GetPhase()), TextMain, X, BarY - 22.f, Small, 0.9f);
+		DrawRect(FrameDark, X - 3.f, BarY - 3.f, BW + 6.f, 14.f);
+		DrawRect(HealthChip, X, BarY, BW * FMath::Max(ShownBoss, Ratio), 8.f);
+		DrawRect(BossRed, X, BarY, BW * Ratio, 8.f);
+	}
+	else
+	{
+		ShownBoss = -1.f;
 	}
 
-	// Spark returning to the treba (deaths outside the arena).
 	if (Player && Player->IsDead() && !Player->IsExamDefeat())
 	{
 		DrawCentered(TEXT("Искра гаснет…"), H * 0.4f, FLinearColor(0.7f, 0.9f, 1.f), 1.1f);
 	}
 
-	// Subtitles (exam, outcomes, epilogue).
+	// Subtitles sit above the boss bar, like the reference.
 	if (Boss && Boss->HasSubtitle())
 	{
-		const FString Line = FString::Printf(TEXT("%s:  %s"), *Boss->GetSubtitleSpeaker(), *Boss->GetSubtitle());
-		DrawCentered(Line, H - (bBossBar ? 118.f : 84.f), FLinearColor(1.f, 0.96f, 0.88f), 0.85f);
+		DrawCentered(FString::Printf(TEXT("%s:  %s"), *Boss->GetSubtitleSpeaker(), *Boss->GetSubtitle()), bBossBar ? BarY - 52.f : H - 70.f, FLinearColor(1.f, 0.97f, 0.9f), 0.85f);
 	}
 
-	// End of the demo chapter.
 	if (Boss && Boss->ShowEndCard())
 	{
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.72f), 0.f, H * 0.35f, W, H * 0.25f);
