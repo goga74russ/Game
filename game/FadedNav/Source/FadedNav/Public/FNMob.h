@@ -38,6 +38,8 @@ public:
 
 	EFNMobType GetMobType() const { return Type; }
 	bool IsDead() const { return State == EFNMobState::Dead; }
+	// Flinch (tree notable "Раскат"): a winding-up attack is interrupted.
+	void Flinch() { if (State == EFNMobState::Windup && Type != EFNMobType::Ryhlets) { EnterState(EFNMobState::Recover, 0.6f); } }
 
 	// --- Tunables [D] ---
 	UPROPERTY(EditAnywhere, Category = "Mob") float AggroRadius = 2500.f;

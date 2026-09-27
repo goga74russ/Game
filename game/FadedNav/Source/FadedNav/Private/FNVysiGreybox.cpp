@@ -1,4 +1,5 @@
 #include "FNVysiGreybox.h"
+#include "FNSkillTree.h"
 
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
@@ -434,7 +435,7 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 		{
 			if (AFNCharacter* Hero = Cast<AFNCharacter>(PC->GetPawn()))
 			{
-				if (!Hero->IsTreeOpen()) { Hero->FindRune(3); Hero->ToggleTree(); }
+				if (!Hero->IsTreeOpen()) { Hero->FindRune(UFNSkillTree::RuneOrder()[0]); Hero->ToggleTree(); }
 				if (FMath::Fmod(ShotClock - 15.f, 5.f) > 3.5f && ShotTaken != Idx)
 				{
 					ShotTaken = Idx;

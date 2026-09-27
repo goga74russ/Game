@@ -7,7 +7,10 @@
 UENUM()
 enum class EFNNodeKind : uint8 { Root, Small, Notable, Keystone };
 
-// Derived modifiers from allocated nodes. Increased = additive, More = multiplicative (GDD §6).
+// What a node changes (GDD §6: Increased = additive, More = multiplicative; keystones use Special).
+enum class EFNStat : uint8 { None, Ranged, Reserve, FireRate, Weak, Reload, MaxHPFlat, Melee, MeleeHeal, StaminaRegen, DamageTaken, DodgeCost, Move, WeakFlinch };
+
+// Derived modifiers from allocated nodes.
 struct FFNTreeStats
 {
 	float RangedInc = 0.f, RangedMore = 1.f;
@@ -23,6 +26,7 @@ struct FFNTreeStats
 	float DodgeCostInc = 0.f;
 	float MoveInc = 0.f;
 	float RollIFramesFlat = 0.f;
+	bool bWeakFlinch = false;
 
 	float Ranged() const { return (1.f + RangedInc) * RangedMore; }
 	float FireRate() const { return (1.f + FireRateInc) * FireRateMore; }
@@ -31,16 +35,22 @@ struct FFNTreeStats
 
 struct FFNNode
 {
-	const TCHAR* Name;
-	const TCHAR* Desc;
-	float X, Y;               // screen layout, 0..1
-	EFNNodeKind Kind;
+	FString Name;
+	FString Desc;
+	FVector2D Pos;            // tree space: Spark at 0,0, y down, Perun's branch points up, radius ~1000
+	EFNNodeKind Kind = EFNNodeKind::Small;
+	int32 God = -1;           // sector 0..7 in the GDD ring order (0 = Perun), -1 = boundary node between sectors
+	bool bSealed = false;     // needs its rune-key (GDD §6: rune = key)
+	EFNStat Stat = EFNStat::None;
+	float Value = 0.f;
+	int32 Special = 0;        // 1 = Ball Lightning, 2 = Bone Rampart
+	int32 Icon = 0;           // line-art icon id for the HUD
 	TArray<int32> Links;
 };
 
-// Demo piece of the passive tree (slice_v1: 20-30 nodes, two clearly different branches before the exam).
-// Small nodes are open; notables and keystones stay locked until their rune-key is found (GDD §6: rune = key).
-// Points: 1 per 2 kills [D]. Node data lives here for the grey-box; moves to a DataTable in stage 1.
+// The passive tree (GDD §6): 8 god sectors around the Spark, grown like an oak, in fog until the god returns.
+// Demo: only Perun's sector is open. Pathing like PoE: a node connects to the learned set; a whole path can be bought.
+// Points: 1 per 2 kills [D]. Node data is generated here for now; moves to a DataTable in stage 1.
 UCLASS(ClassGroup = (FadedNav))
 class FADEDNAV_API UFNSkillTree : public UActorComponent
 {
@@ -50,15 +60,23 @@ public:
 	UFNSkillTree();
 
 	static const TArray<FFNNode>& Nodes();
-	static const TArray<int32>& RuneOrder(); // notables/keystones in drop order
+	static const TArray<int32>& RuneOrder(); // sealed nodes in drop order
+	static const TCHAR* GodName(int32 God);
+	static const TCHAR* GodElement(int32 God);
+	static FLinearColor GodColor(int32 God);
+	static bool IsSectorOpen(int32 God) { return God == 0; } // demo: Perun only
 
 	bool IsAllocated(int32 Node) const { return Allocated.Contains(Node); }
 	bool IsRuneFound(int32 Node) const { return FoundRunes.Contains(Node); }
 	bool IsLockedByRune(int32 Node) const;
+	bool IsPassable(int32 Node) const; // open sector and not sealed
 	bool CanAllocate(int32 Node, int32 Points) const;
 	int32 GetSpent() const { return Allocated.Num() - 1; } // root is free
 
-	bool Allocate(int32 Node, int32 Points);
+	// Shortest path of unlearned passable nodes from the learned set to Node (empty if learned, false if unreachable).
+	bool FindPath(int32 Node, TArray<int32>& OutPath) const;
+	bool Allocate(int32 Node, int32 Points);      // buys the whole path if affordable
+	int32 Refund(int32 Node);                     // returns points given back (node + anything cut off)
 	void FindRune(int32 Node) { FoundRunes.Add(Node); }
 	int32 NumRunesFound() const { return FoundRunes.Num(); }
 

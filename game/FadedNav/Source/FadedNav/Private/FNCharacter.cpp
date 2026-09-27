@@ -12,6 +12,7 @@
 #include "Components/PointLightComponent.h"
 #include "EngineUtils.h"
 #include "FNGameMode.h"
+#include "FNMob.h"
 #include "FNPerunBoss.h"
 #include "FNSkillTree.h"
 #include "Kismet/GameplayStatics.h"
@@ -437,6 +438,11 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 			{
 				LastHitTime = GetWorld()->GetTimeSeconds();
 				bLastHitWeak = bWeak;
+				// "Раскат": a weak-point shot makes the creature flinch.
+				if (bWeak && TreeMods.bWeakFlinch)
+				{
+					if (AFNMob* Mob = Cast<AFNMob>(Hit.GetActor())) { Mob->Flinch(); }
+				}
 			}
 		}
 		DrawDebugPoint(GetWorld(), Impact, 8.f, FColor(255, 230, 160), false, 0.1f);
@@ -445,6 +451,7 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 
 void AFNCharacter::CycleWeapon(int32 Dir)
 {
+	if (bTreeOpen) { return; } // the wheel zooms the tree
 	for (int32 Step = 1; Step <= 3; ++Step)
 	{
 		const EFNWeapon Next = static_cast<EFNWeapon>((static_cast<int32>(Weapon) + Dir * Step + 3) % 3);
@@ -594,14 +601,22 @@ void AFNCharacter::TryAllocate(int32 Node)
 	if (Tree->Allocate(Node, GetSkillPoints()))
 	{
 		ApplyStats();
-		ShowMessage(FString::Printf(TEXT("Изучено: %s"), UFNSkillTree::Nodes()[Node].Name));
+		ShowMessage(FString::Printf(TEXT("Изучено: %s"), *UFNSkillTree::Nodes()[Node].Name));
+	}
+}
+
+void AFNCharacter::TryRefund(int32 Node)
+{
+	if (Tree->Refund(Node) > 0)
+	{
+		ApplyStats();
 	}
 }
 
 void AFNCharacter::FindRune(int32 Node)
 {
 	Tree->FindRune(Node);
-	ShowMessage(FString::Printf(TEXT("Руна-ключ: %s  (Tab)"), UFNSkillTree::Nodes()[Node].Name));
+	ShowMessage(FString::Printf(TEXT("Руна-ключ: %s  (Tab)"), *UFNSkillTree::Nodes()[Node].Name));
 }
 
 void AFNCharacter::ApplyStats()
@@ -617,6 +632,7 @@ void AFNCharacter::ApplyStats()
 	TreeMods.Stamina = S.StaminaRegenInc;
 	TreeMods.Dodge = S.DodgeCostInc;
 	TreeMods.IFrames = S.RollIFramesFlat;
+	TreeMods.bWeakFlinch = S.bWeakFlinch;
 
 	const float OldMax = FMath::Max(1.f, Health->MaxHealth);
 	const float Ratio = Health->Health / OldMax;

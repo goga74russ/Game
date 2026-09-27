@@ -15,9 +15,6 @@ class FADEDNAV_API AFNHUD : public AHUD
 
 public:
 	virtual void DrawHUD() override;
-	virtual void NotifyHitBoxClick(FName BoxName) override;
-	virtual void NotifyHitBoxBeginCursorOver(FName BoxName) override;
-	virtual void NotifyHitBoxEndCursorOver(FName BoxName) override;
 
 	// Exam outcome A "almost won": boss HP at or below this ratio when the player falls [D].
 	UPROPERTY(EditAnywhere, Category = "Exam")
@@ -37,6 +34,13 @@ private:
 	void GradRect(float X, float Y, float W, float H, const FLinearColor& Top, const FLinearColor& Bottom);
 	void Ornament(float CX, float Y, float HalfW);
 	void DrawTree(class AFNCharacter* Player);
+	void TreeInput(class AFNCharacter* Player);
+
+	// Skill tree camera (tree space -> screen): pan in tree units, zoom as pixels per unit at 720p.
+	FVector2D TreePan = FVector2D(0.f, 560.f);
+	float TreeZoom = 0.45f;
+	bool bTreeLmbDown = false, bTreeDragging = false;
+	FVector2D TreeDragStart = FVector2D::ZeroVector, TreePanStart = FVector2D::ZeroVector;
 
 	// Faces: 0 = Ruslan Display (titles), 1 = Cormorant Bold, 2 = Cormorant SemiBold (text), 3 = Cormorant Medium Italic.
 	// Fonts are built per pixel size at the current scale, so glyphs stay crisp at any resolution.

@@ -17,8 +17,8 @@
 
 namespace
 {
-	// Palette of docs/ui/hud_mockup_v1.html (hex values reinterpreted as-is, Canvas draws in display space).
-	FLinearColor Hex(const TCHAR* H, float A = 1.f) { FLinearColor C = FColor::FromHex(H).ReinterpretAsLinear(); C.A = A; return C; }
+	// Palette of docs/ui/hud_mockup_v1.html: sRGB hex -> linear (Canvas colours are linear).
+	FLinearColor Hex(const TCHAR* H, float A = 1.f) { FLinearColor C(FColor::FromHex(H)); C.A = A; return C; }
 	const FLinearColor Bone = Hex(TEXT("e8dfc8"));
 	const FLinearColor BoneDim = Hex(TEXT("a89f8a"));
 	const FLinearColor Ink = Hex(TEXT("0d0b09"), 0.8f);
@@ -187,86 +187,415 @@ void AFNHUD::Ornament(float CX, float Y, float HalfW)
 	}
 }
 
-// ---------------------------------------------------------------- skill tree
+// ---------------------------------------------------------------- skill tree (docs/ui/tree_mockup_v1.html)
 
-void AFNHUD::DrawTree(AFNCharacter* Player)
+namespace
 {
-	const float W = Canvas->ClipX;
-	const float H = Canvas->ClipY;
-	UFont* Small = Font(2, 15.f);
-	UFNSkillTree* Tree = Player->GetTree();
-	const TArray<FFNNode>& Nodes = UFNSkillTree::Nodes();
-	const int32 Points = Player->GetSkillPoints();
-
-	DrawRect(FLinearColor(0.02f, 0.02f, 0.03f, 0.9f), 0.f, 0.f, W, H);
-	Txt(TEXT("ДРЕВО"), W * 0.5f / S, 18.f, Font(0, 28.f), Bone, EAlign::Center);
-	Txt(FString::Printf(TEXT("очки: %d   ·   руны-ключи: %d / %d   ·   Tab — закрыть"), Points, Tree->NumRunesFound(), UFNSkillTree::RuneOrder().Num()),
-		W * 0.5f / S, 56.f, Font(3, 16.f), BoneDim, EAlign::Center);
-	Ornament(W * 0.5f / S, 84.f, 220.f);
-
-	auto Pos = [W, H](const FFNNode& N) { return FVector2D(N.X * W, N.Y * H); };
-
-	// Links
-	for (int32 i = 0; i < Nodes.Num(); ++i)
+	// Line-art icons in a 24x24 box; polylines separated by breaks (X < 0).
+	void AddCircle(TArray<FVector2D>& Out, float CX, float CY, float R, float A0 = 0.f, float A1 = 2.f * PI, int32 Seg = 16)
 	{
-		for (int32 L : Nodes[i].Links)
+		for (int32 i = 0; i <= Seg; ++i) { const float A = FMath::Lerp(A0, A1, float(i) / Seg); Out.Add(FVector2D(CX + R * FMath::Cos(A), CY + R * FMath::Sin(A))); }
+		Out.Add(FVector2D(-1.f, -1.f));
+	}
+	void AddPoly(TArray<FVector2D>& Out, std::initializer_list<FVector2D> Pts)
+	{
+		for (const FVector2D& P : Pts) { Out.Add(P); }
+		Out.Add(FVector2D(-1.f, -1.f));
+	}
+	void IconLines(int32 Id, TArray<FVector2D>& O)
+	{
+		using V = FVector2D;
+		switch (Id)
 		{
-			if (L < i) { continue; }
-			const bool bLit = Tree->IsAllocated(i) && Tree->IsAllocated(L);
-			const FVector2D A = Pos(Nodes[i]), B = Pos(Nodes[L]);
-			DrawLine(A.X, A.Y, B.X, B.Y, bLit ? FLinearColor(1.f, 0.75f, 0.3f) : FLinearColor(0.3f, 0.3f, 0.35f), bLit ? 3.f : 1.5f);
+		case 1: AddPoly(O, { V(13, 2), V(5, 14), V(11, 14), V(9, 22), V(19, 9), V(13, 9), V(13, 2) }); break; // bolt
+		case 2: AddCircle(O, 12, 19, 10.6f, -2.35f, -0.79f, 10); AddCircle(O, 12, 5, 10.6f, 0.79f, 2.35f, 10); AddCircle(O, 12, 12, 3.f); break; // eye
+		case 3: AddPoly(O, { V(12, 3), V(20, 6), V(20, 12), V(17, 17), V(12, 21), V(7, 17), V(4, 12), V(4, 6), V(12, 3) }); break; // shield
+		case 4: AddCircle(O, 9, 8, 4.f); AddCircle(O, 15, 17, 3.2f); break; // foot
+		case 5: AddCircle(O, 12, 15, 5.5f, -0.5f, PI + 0.5f, 12); AddPoly(O, { V(7.2f, 12.3f), V(12, 3), V(16.8f, 12.3f) }); break; // drop
+		case 6: AddCircle(O, 12, 12, 8.f); AddCircle(O, 12, 12, 4.f); break; // ring
+		case 7: AddPoly(O, { V(7, 7), V(17, 17) }); AddCircle(O, 6, 8, 2.2f); AddCircle(O, 8, 6, 2.2f); AddCircle(O, 16, 18, 2.2f); AddCircle(O, 18, 16, 2.2f); break; // bone
+		case 8: AddPoly(O, { V(12, 2), V(12, 22) }); AddPoly(O, { V(8, 7), V(16, 7) }); AddPoly(O, { V(7, 11), V(17, 11) }); AddPoly(O, { V(8, 15), V(16, 15) }); break; // spindle
+		case 9: AddPoly(O, { V(12, 3), V(16, 9), V(17, 14), V(15, 19), V(12, 21), V(9, 19), V(7, 14), V(9, 10), V(11, 12), V(12, 3) }); break; // flame
+		case 10: AddCircle(O, 12, 10, 7.f); AddCircle(O, 9, 11, 1.5f); AddCircle(O, 15, 11, 1.5f); AddPoly(O, { V(8, 17), V(8, 20), V(16, 20), V(16, 17) }); break; // skull
+		case 11:
+			AddCircle(O, 12, 12, 5.f);
+			for (int32 k = 0; k < 8; ++k) { const float A = k * PI / 4.f; AddPoly(O, { V(12 + 7 * FMath::Cos(A), 12 + 7 * FMath::Sin(A)), V(12 + 10 * FMath::Cos(A), 12 + 10 * FMath::Sin(A)) }); }
+			break; // sun
+		case 12: AddPoly(O, { V(3, 8), V(15, 8) }); AddPoly(O, { V(3, 12), V(11, 12) }); AddPoly(O, { V(3, 16), V(17, 16) }); AddCircle(O, 15, 5, 3.f, PI * 0.5f, PI * 2.2f, 8); break; // wind
+		default: break;
 		}
 	}
 
-	// Nodes: gold = learned, white = available, dim = needs a point / path, dark with "?" = rune-key not found.
+	float NodeRadius(EFNNodeKind Kind)
+	{
+		return Kind == EFNNodeKind::Root ? 34.f : (Kind == EFNNodeKind::Keystone ? 30.f : (Kind == EFNNodeKind::Notable ? 20.f : 9.f));
+	}
+}
+
+void AFNHUD::TreeInput(AFNCharacter* Player)
+{
+	APlayerController* PC = GetOwningPlayerController();
+	if (!PC) { return; }
+	float MX = 0.f, MY = 0.f;
+	PC->GetMousePosition(MX, MY);
+	const FVector2D Mouse(MX, MY);
+	const FVector2D Center(Canvas->ClipX * 0.5f, Canvas->ClipY * 0.5f);
+	const float K = TreeZoom * S;
+
+	// Hover: nearest node under the cursor.
+	const TArray<FFNNode>& Nodes = UFNSkillTree::Nodes();
+	HoveredNode = -1;
+	float Best = 1e9f;
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		const float D = FVector2D::Distance(Center + (Nodes[i].Pos + TreePan) * K, Mouse);
+		if (D < FMath::Max(NodeRadius(Nodes[i].Kind) * K + 4.f, 10.f) && D < Best) { Best = D; HoveredNode = i; }
+	}
+
+	// LMB: drag pans; a click without dragging learns the whole path to the hovered node.
+	const bool bDown = PC->IsInputKeyDown(EKeys::LeftMouseButton);
+	if (bDown && !bTreeLmbDown) { TreeDragStart = Mouse; TreePanStart = TreePan; bTreeDragging = false; }
+	if (bDown && FVector2D::Distance(Mouse, TreeDragStart) > 5.f) { bTreeDragging = true; }
+	if (bDown && bTreeDragging) { TreePan = TreePanStart + (Mouse - TreeDragStart) / K; }
+	if (!bDown && bTreeLmbDown && !bTreeDragging && HoveredNode >= 0) { Player->TryAllocate(HoveredNode); }
+	bTreeLmbDown = bDown;
+
+	if (PC->WasInputKeyJustPressed(EKeys::RightMouseButton) && HoveredNode >= 0) { Player->TryRefund(HoveredNode); }
+
+	// Wheel: zoom around the cursor.
+	const int32 Wheel = (PC->WasInputKeyJustPressed(EKeys::MouseScrollUp) ? 1 : 0) - (PC->WasInputKeyJustPressed(EKeys::MouseScrollDown) ? 1 : 0);
+	if (Wheel != 0)
+	{
+		const float Z0 = TreeZoom, Z1 = FMath::Clamp(Z0 * (Wheel > 0 ? 1.15f : 1.f / 1.15f), 0.22f, 1.8f);
+		const FVector2D M = (Mouse - Center) / S;
+		TreePan += M / Z1 - M / Z0;
+		TreeZoom = Z1;
+	}
+}
+
+void AFNHUD::DrawTree(AFNCharacter* Player)
+{
+	TreeInput(Player);
+
+	const float PW = Canvas->ClipX, PH = Canvas->ClipY;
+	const float W = PW / S, H = 720.f;
+	const float K = TreeZoom * S;
+	const FVector2D Center(PW * 0.5f, PH * 0.5f);
+	const float Time = GetWorld()->GetRealTimeSeconds();
+	UFNSkillTree* Tree = Player->GetTree();
+	const TArray<FFNNode>& Nodes = UFNSkillTree::Nodes();
+	const int32 Points = Player->GetSkillPoints();
+	const FLinearColor Lit = UFNSkillTree::GodColor(0);
+
+	auto ToS = [&](const FVector2D& P) { return Center + (P + TreePan) * K; };
+	auto Tri = [&](const FVector2D& A, const FVector2D& B, const FVector2D& C, const FLinearColor& Col)
+	{
+		FCanvasTriangleItem T(A, B, C, GWhiteTexture); T.SetColor(Col); T.BlendMode = SE_BLEND_Translucent; Canvas->DrawItem(T);
+	};
+	auto Disc = [&](const FVector2D& C, float R, const FLinearColor& Col)
+	{
+		const int32 Seg = FMath::Clamp(FMath::RoundToInt(R * 0.8f), 8, 40);
+		for (int32 i = 0; i < Seg; ++i)
+		{
+			const float A0 = 2.f * PI * i / Seg, A1 = 2.f * PI * (i + 1) / Seg;
+			Tri(C, C + FVector2D(FMath::Cos(A0), FMath::Sin(A0)) * R, C + FVector2D(FMath::Cos(A1), FMath::Sin(A1)) * R, Col);
+		}
+	};
+	auto Ring = [&](const FVector2D& C, float R, const FLinearColor& Col, float Th, bool bDash = false)
+	{
+		const int32 Seg = FMath::Clamp(FMath::RoundToInt(R * 0.8f), 12, 160);
+		for (int32 i = 0; i < Seg; ++i)
+		{
+			if (bDash && (i % 2)) { continue; }
+			const float A0 = 2.f * PI * i / Seg, A1 = 2.f * PI * (i + 1) / Seg;
+			const FVector2D P0 = C + FVector2D(FMath::Cos(A0), FMath::Sin(A0)) * R, P1 = C + FVector2D(FMath::Cos(A1), FMath::Sin(A1)) * R;
+			DrawLine(P0.X, P0.Y, P1.X, P1.Y, Col, Th);
+		}
+	};
+	auto Curve = [&](int32 A, int32 B, TArray<FVector2D>& Out)
+	{
+		// Branch-like quadratic curve, bent alternately left/right.
+		const FVector2D PA = Nodes[A].Pos, PB = Nodes[B].Pos, D = PB - PA;
+		const float L = FMath::Max(1.f, D.Size());
+		const float O = L * 0.12f * (((A + B) % 2) ? 1.f : -1.f);
+		const FVector2D Ctrl = (PA + PB) * 0.5f + FVector2D(-D.Y, D.X) / L * O;
+		Out.Reset();
+		for (int32 i = 0; i <= 10; ++i)
+		{
+			const float T = i / 10.f;
+			Out.Add(ToS((1 - T) * (1 - T) * PA + 2 * (1 - T) * T * Ctrl + T * T * PB));
+		}
+	};
+
+	// Background: dark with a warm centre.
+	DrawRect(Hex(TEXT("070605")), 0.f, 0.f, PW, PH);
+	for (int32 i = 6; i >= 1; --i) { Disc(ToS(FVector2D::ZeroVector), 1100.f * K * i / 6.f, Hex(TEXT("2a2016"), 0.07f)); }
+
+	// Oak hints: roots under the heart, dashed crown ring.
+	{
+		static const FVector2D Roots[][3] = {
+			{ FVector2D(-38, 40), FVector2D(-40, 200), FVector2D(-150, 360) }, { FVector2D(38, 40), FVector2D(40, 200), FVector2D(150, 360) },
+			{ FVector2D(0, 50), FVector2D(-5, 250), FVector2D(0, 420) }, { FVector2D(-20, 60), FVector2D(-120, 200), FVector2D(-320, 280) },
+			{ FVector2D(20, 60), FVector2D(120, 200), FVector2D(320, 280) } };
+		for (const auto& R : Roots)
+		{
+			FVector2D Prev = ToS(R[0]);
+			for (int32 i = 1; i <= 12; ++i)
+			{
+				const float T = i / 12.f;
+				const FVector2D Pt = ToS((1 - T) * (1 - T) * R[0] + 2 * (1 - T) * T * R[1] + T * T * R[2]);
+				DrawLine(Prev.X, Prev.Y, Pt.X, Pt.Y, Hex(TEXT("3a2e20"), 0.3f), FMath::Max(1.f, 6.f * K * (1.f - T * 0.7f)));
+				Prev = Pt;
+			}
+		}
+		Ring(ToS(FVector2D::ZeroVector), 930.f * K, Hex(TEXT("b8955a"), 0.12f), 1.f, true);
+		Ring(ToS(FVector2D::ZeroVector), 560.f * K, Hex(TEXT("b8955a"), 0.07f), 1.f);
+	}
+
+	// Wood: every link is a tapered branch.
+	TArray<FVector2D> C;
+	for (int32 A = 0; A < Nodes.Num(); ++A)
+	{
+		for (int32 B : Nodes[A].Links)
+		{
+			if (B < A) { continue; }
+			Curve(A, B, C);
+			const float R = FMath::Min(Nodes[A].Pos.Size(), Nodes[B].Pos.Size());
+			const float Wd = FMath::Max(2.f, 11.f - R / 70.f) * K;
+			for (int32 i = 0; i + 1 < C.Num(); ++i) { DrawLine(C[i].X, C[i].Y, C[i + 1].X, C[i + 1].Y, Hex(TEXT("2b2218")), Wd + 4.f * K); }
+			for (int32 i = 0; i + 1 < C.Num(); ++i) { DrawLine(C[i].X, C[i].Y, C[i + 1].X, C[i + 1].Y, Hex(TEXT("4a3b28")), Wd); }
+		}
+	}
+
+	// Fog over closed sectors: dark wedge + soft layered mist blobs.
+	for (int32 G = 1; G < 8; ++G)
+	{
+		const float A0 = -PI * 0.5f + G * PI * 0.25f, Wg = PI / 8.f;
+		constexpr int32 Steps = 12;
+		for (int32 i = 0; i < Steps; ++i)
+		{
+			const float B0 = A0 - Wg + 2.f * Wg * i / Steps, B1 = A0 - Wg + 2.f * Wg * (i + 1) / Steps;
+			const FVector2D D0(FMath::Cos(B0), FMath::Sin(B0)), D1(FMath::Cos(B1), FMath::Sin(B1));
+			const FVector2D I0 = ToS(D0 * 100.f), I1 = ToS(D1 * 100.f), O0 = ToS(D0 * 960.f), O1 = ToS(D1 * 960.f);
+			Tri(I0, O0, O1, Hex(TEXT("0b0907"), 0.6f));
+			Tri(I0, O1, I1, Hex(TEXT("0b0907"), 0.6f));
+		}
+		for (int32 k = 0; k < 6; ++k)
+		{
+			const float R = 220.f + 120.f * k, Aoff = FMath::Sin(G * 3.1f + k * 1.7f) * Wg * 0.7f;
+			const FVector2D P = ToS(FVector2D(FMath::Cos(A0 + Aoff), FMath::Sin(A0 + Aoff)) * R);
+			const float Drift = 1.f + 0.06f * FMath::Sin(Time * 0.3f + k + G);
+			for (int32 L = 4; L >= 1; --L) { Disc(P, (70.f + 25.f * L) * K * Drift, Hex(TEXT("cfc6b0"), 0.018f)); }
+		}
+	}
+
+	// Learned links glow with light flowing outward; the hover path is a dashed preview.
+	TArray<int32> PreviewPath;
+	if (HoveredNode >= 0) { Tree->FindPath(HoveredNode, PreviewPath); }
+	auto InPreview = [&](int32 N) { return PreviewPath.Contains(N); };
+	for (int32 A = 0; A < Nodes.Num(); ++A)
+	{
+		for (int32 B : Nodes[A].Links)
+		{
+			if (B < A) { continue; }
+			const bool bOn = Tree->IsAllocated(A) && Tree->IsAllocated(B);
+			const bool bPv = !bOn && (InPreview(A) || InPreview(B)) && (InPreview(A) || Tree->IsAllocated(A)) && (InPreview(B) || Tree->IsAllocated(B));
+			if (!bOn && !bPv) { continue; }
+			Curve(A, B, C);
+			const float R = FMath::Min(Nodes[A].Pos.Size(), Nodes[B].Pos.Size());
+			const float Wd = FMath::Max(2.f, (11.f - R / 70.f) * 0.45f) * K;
+			const float Phase = FMath::Fmod(Time * 1.2f + A * 0.37f, 1.f);
+			for (int32 i = 0; i + 1 < C.Num(); ++i)
+			{
+				if (bOn)
+				{
+					FLinearColor G = Lit; G.A = 0.25f;
+					DrawLine(C[i].X, C[i].Y, C[i + 1].X, C[i + 1].Y, G, Wd * 3.f);
+					G.A = 0.9f;
+					DrawLine(C[i].X, C[i].Y, C[i + 1].X, C[i + 1].Y, G, FMath::Max(1.5f, Wd));
+					if (FMath::Abs(i / 10.f - Phase) < 0.06f) { DrawLine(C[i].X, C[i].Y, C[i + 1].X, C[i + 1].Y, Hex(TEXT("e9fbff")), FMath::Max(1.5f, Wd * 0.8f)); }
+				}
+				else if (i % 2 == 0)
+				{
+					DrawLine(C[i].X, C[i].Y, C[i + 1].X, C[i + 1].Y, Hex(TEXT("e8dfc8"), 0.9f), 1.5f);
+				}
+			}
+		}
+	}
+
+	// Nodes.
+	TArray<FVector2D> Icon;
 	for (int32 i = 0; i < Nodes.Num(); ++i)
 	{
 		const FFNNode& N = Nodes[i];
-		const float R = N.Kind == EFNNodeKind::Keystone ? 22.f : (N.Kind == EFNNodeKind::Notable ? 17.f : (N.Kind == EFNNodeKind::Root ? 18.f : 11.f));
-		const FVector2D P = Pos(N);
-		FLinearColor C(0.35f, 0.35f, 0.4f);
-		if (Tree->IsAllocated(i)) { C = FLinearColor(1.f, 0.72f, 0.25f); }
-		else if (Tree->IsLockedByRune(i)) { C = FLinearColor(0.12f, 0.12f, 0.15f); }
-		else if (Tree->CanAllocate(i, Points)) { C = FLinearColor(0.95f, 0.95f, 1.f); }
-		if (i == HoveredNode) { DrawRect(FLinearColor::White, P.X - R - 3.f, P.Y - R - 3.f, 2.f * R + 6.f, 2.f * R + 6.f); }
-		DrawRect(C, P.X - R, P.Y - R, 2.f * R, 2.f * R);
-		if (Tree->IsLockedByRune(i)) { DrawText(TEXT("?"), FLinearColor(0.6f, 0.6f, 0.7f), P.X - 4.f, P.Y - 10.f, Small); }
-		AddHitBox(FVector2D(P.X - R, P.Y - R), FVector2D(2.f * R, 2.f * R), FName(*FString::FromInt(i)), true);
+		const FVector2D P = ToS(N.Pos);
+		if (P.X < -60.f || P.Y < -60.f || P.X > PW + 60.f || P.Y > PH + 60.f) { continue; }
+		const bool bOpen = UFNSkillTree::IsSectorOpen(N.God);
+		const bool bAlloc = Tree->IsAllocated(i);
+		const bool bSeal = Tree->IsLockedByRune(i);
+		bool bAvail = false;
+		if (!bAlloc && Tree->IsPassable(i)) { for (int32 L : N.Links) { if (Tree->IsAllocated(L)) { bAvail = true; break; } } }
+		const bool bPv = InPreview(i);
+		const float R = NodeRadius(N.Kind) * K;
+		const float Fade = bOpen ? 1.f : 0.35f;
+		const float Breathe = bAvail && !bPv ? 0.7f + 0.3f * FMath::Sin(Time * 3.5f) : 1.f;
+
+		FLinearColor Stroke = bAlloc ? Lit : (bPv || bAvail ? Bone : (bSeal ? Hex(TEXT("8a6fb0")) : (bOpen ? Hex(TEXT("5a5244")) : Hex(TEXT("2e2a24")))));
+		Stroke.A = Fade * Breathe;
+		FLinearColor Fill = bAlloc ? Hex(TEXT("10252c")) : (bOpen ? Hex(TEXT("15110d")) : Hex(TEXT("0e0c0a")));
+		Fill.A = Fade;
+		const float GoldA = bOpen ? 1.f : 0.12f; // gold trim nearly vanishes in the fog
+		const FLinearColor GoldF(Gold.R, Gold.G, Gold.B, GoldA);
+
+		if (bAlloc || bPv) { FLinearColor Hl = bAlloc ? Lit : Bone; Hl.A = bAlloc ? (N.Kind == EFNNodeKind::Small ? 0.22f : 0.3f) : 0.12f; Disc(P, R + 9.f * K, Hl); }
+
+		if (N.Kind == EFNNodeKind::Root)
+		{
+			for (int32 L = 5; L >= 1; --L) { FLinearColor G = Lit; G.A = 0.07f; Disc(P, (R + 26.f * K) * L / 5.f + R * 0.5f, G); }
+			Disc(P, R, Hex(TEXT("10171a")));
+			Ring(P, R, Lit, 3.f * K);
+			Disc(P, 12.f * K * (1.f + 0.08f * FMath::Sin(Time * 2.f)), Hex(TEXT("e9fbff")));
+		}
+		else if (N.Kind == EFNNodeKind::Notable)
+		{
+			const FVector2D D[] = { FVector2D(P.X, P.Y - R * 1.3f), FVector2D(P.X + R * 1.3f, P.Y), FVector2D(P.X, P.Y + R * 1.3f), FVector2D(P.X - R * 1.3f, P.Y) };
+			Tri(D[0], D[1], D[2], Fill); Tri(D[0], D[2], D[3], Fill);
+			for (int32 k = 0; k < 4; ++k) { DrawLine(D[k].X, D[k].Y, D[(k + 1) % 4].X, D[(k + 1) % 4].Y, Stroke, 2.f * K); }
+			for (int32 k = 0; k < 4; ++k)
+			{
+				const FVector2D A1 = P + (D[k] - P) * 0.72f, B1 = P + (D[(k + 1) % 4] - P) * 0.72f;
+				DrawLine(A1.X, A1.Y, B1.X, B1.Y, FLinearColor(Gold.R, Gold.G, Gold.B, 0.5f * GoldA), 1.f);
+			}
+		}
+		else if (N.Kind == EFNNodeKind::Keystone)
+		{
+			Disc(P, R, Fill);
+			Ring(P, R, Stroke, 2.5f * K);
+			Ring(P, R + 6.f * K, FLinearColor(Gold.R, Gold.G, Gold.B, 0.8f * GoldA), 1.f, true);
+			for (int32 k = 0; k < 8; ++k)
+			{
+				const FVector2D Dk(FMath::Cos(k * PI / 4.f), FMath::Sin(k * PI / 4.f));
+				const FVector2D A1 = P + Dk * (R + 6.f * K), B1 = P + Dk * (R + 13.f * K);
+				DrawLine(A1.X, A1.Y, B1.X, B1.Y, GoldF, 1.5f * K);
+			}
+		}
+		else
+		{
+			Disc(P, R, Fill);
+			Ring(P, R, Stroke, FMath::Max(1.f, 2.f * K));
+		}
+
+		// Icon.
+		if (N.Icon > 0 && (N.Kind == EFNNodeKind::Notable || N.Kind == EFNNodeKind::Keystone) && R > 6.f)
+		{
+			Icon.Reset();
+			IconLines(N.Icon, Icon);
+			const float Sc = (N.Kind == EFNNodeKind::Keystone ? 1.35f : 0.95f) * K;
+			const FLinearColor IC = bAlloc ? Hex(TEXT("dff7ff")) : (bOpen ? (bAvail || bPv ? Bone : Hex(TEXT("6d6555"))) : Hex(TEXT("2e2a24")));
+			for (int32 k = 0; k + 1 < Icon.Num(); ++k)
+			{
+				if (Icon[k].X < 0.f || Icon[k + 1].X < 0.f) { continue; }
+				const FVector2D A1 = P + (Icon[k] - FVector2D(12.f, 12.f)) * Sc, B1 = P + (Icon[k + 1] - FVector2D(12.f, 12.f)) * Sc;
+				DrawLine(A1.X, A1.Y, B1.X, B1.Y, IC, FMath::Max(1.f, 1.6f * K));
+			}
+		}
+
+		// Rune seal: violet disc with a padlock.
+		if (bSeal)
+		{
+			Disc(P, R + 4.f * K, Hex(TEXT("2a1e38"), 0.85f));
+			const FLinearColor LC = Hex(TEXT("c9a0ff"));
+			const float U = FMath::Max(0.6f, K);
+			const FVector2D Q[] = { FVector2D(-6, -1), FVector2D(6, -1), FVector2D(6, 8), FVector2D(-6, 8) };
+			for (int32 k = 0; k < 4; ++k) { const FVector2D A1 = P + Q[k] * U, B1 = P + Q[(k + 1) % 4] * U; DrawLine(A1.X, A1.Y, B1.X, B1.Y, LC, 1.6f * U); }
+			for (int32 k = 0; k < 8; ++k)
+			{
+				const float A0 = PI + PI * k / 8.f, A1 = PI + PI * (k + 1) / 8.f;
+				const FVector2D P0 = P + FVector2D(4.f * FMath::Cos(A0), -1.f + 5.f * FMath::Sin(A0)) * U;
+				const FVector2D P1 = P + FVector2D(4.f * FMath::Cos(A1), -1.f + 5.f * FMath::Sin(A1)) * U;
+				DrawLine(P0.X, P0.Y, P1.X, P1.Y, LC, 1.6f * U);
+			}
+		}
 	}
 
-	// Tooltip
+	// Sector names at the rim.
+	for (int32 G = 0; G < 8; ++G)
+	{
+		const float A0 = -PI * 0.5f + G * PI * 0.25f;
+		const FVector2D L = ToS(FVector2D(FMath::Cos(A0), FMath::Sin(A0)) * 1010.f) / S;
+		FLinearColor Col = UFNSkillTree::GodColor(G); Col.A = G == 0 ? 1.f : 0.45f;
+		Txt(FString(UFNSkillTree::GodName(G)).ToUpper(), L.X, L.Y - 18.f, Font(0, G == 0 ? 30.f : 24.f), Col, EAlign::Center);
+		const FString Sub = G == 0 ? FString(TEXT("Гром · Грозовые Выси")) : FString::Printf(TEXT("%s · откроется в Нави"), UFNSkillTree::GodElement(G));
+		FLinearColor SubCol = BoneDim; SubCol.A = G == 0 ? 1.f : 0.7f;
+		Txt(Sub, L.X, L.Y + 14.f, Font(3, 16.f), SubCol, EAlign::Center);
+	}
+
+	// Vignette.
+	for (int32 i = 0; i < 10; ++i)
+	{
+		const FLinearColor V(0.f, 0.f, 0.f, 0.075f * (1.f - i / 10.f));
+		const float Bw = PW * 0.012f * (i + 1), Bh = PH * 0.012f * (i + 1);
+		DrawRect(V, 0.f, 0.f, PW, Bh); DrawRect(V, 0.f, PH - Bh, PW, Bh);
+		DrawRect(V, 0.f, 0.f, Bw, PH); DrawRect(V, PW - Bw, 0.f, Bw, PH);
+	}
+
+	// Chrome: title, points and seals, legend, controls.
+	Txt(TEXT("ДРЕВО"), W * 0.5f, 12.f, Font(0, 32.f), Bone, EAlign::Center);
+	Txt(TEXT("восемь ветвей — восемь богов  ·  открыта ветвь Перуна"), W * 0.5f, 52.f, Font(3, 16.f), BoneDim, EAlign::Center);
+	Ornament(W * 0.5f, 80.f, 230.f);
+	Txt(FString::FromInt(Points), W - 28.f, 14.f, Font(1, 40.f), Points > 0 ? Bone : BoneDim, EAlign::Right);
+	Txt(TEXT("очков древа"), W - 28.f, 60.f, Font(2, 15.f), BoneDim, EAlign::Right);
+	Txt(FString::Printf(TEXT("печати: %d / %d"), Tree->NumRunesFound(), UFNSkillTree::RuneOrder().Num()), W - 28.f, 84.f, Font(2, 17.f), Gold, EAlign::Right);
+
+	const TCHAR* LegText[] = { TEXT("изучено"), TEXT("доступно"), TEXT("нужен путь"), TEXT("под печатью — нужна руна-ключ"), TEXT("в тумане — ветвь другого бога") };
+	const FLinearColor LegCol[] = { Lit, Bone, Hex(TEXT("5a5244")), Hex(TEXT("c9a0ff")), Hex(TEXT("3a352c")) };
+	for (int32 i = 0; i < 5; ++i)
+	{
+		const float LY = H - 128.f + i * 21.f;
+		FillDisc(32.f, LY + 11.f, 5.f, LegCol[i]);
+		Txt(LegText[i], 44.f, LY, Font(2, 15.f), BoneDim);
+	}
+	Txt(TEXT("ЛКМ — изучить путь  ·  ПКМ — вернуть очко"), W - 28.f, H - 64.f, Font(3, 15.f), BoneDim, EAlign::Right);
+	Txt(TEXT("колесо — масштаб  ·  тащить — сдвиг  ·  Tab — закрыть"), W - 28.f, H - 44.f, Font(3, 15.f), BoneDim, EAlign::Right);
+
+	// Tooltip card next to the cursor.
 	if (Nodes.IsValidIndex(HoveredNode))
 	{
 		const FFNNode& N = Nodes[HoveredNode];
-		const bool bLocked = Tree->IsLockedByRune(HoveredNode);
-		const FString Title = bLocked ? FString(TEXT("??? (нужна руна-ключ)")) : FString(N.Name);
-		const FString Body = bLocked ? FString(TEXT("Руну-ключ роняют твари Высей. Найди её — и узел откроется.")) : FString(N.Desc);
-		const float TX = W * 0.3f / S, TY = H / S - 118.f;
-		FillBevel(TX, TY, W * 0.4f / S, 88.f, 10.f, Ink2);
-		LineBevel(TX, TY, W * 0.4f / S, 88.f, 10.f, Line, 1.f);
-		Txt(Title, TX + 16.f, TY + 10.f, Font(1, 20.f), Hex(TEXT("e8c9a0")));
-		Txt(Body, TX + 16.f, TY + 42.f, Small, Bone);
-	}
-}
-
-void AFNHUD::NotifyHitBoxClick(FName BoxName)
-{
-	if (AFNCharacter* Player = Cast<AFNCharacter>(GetOwningPawn()))
-	{
-		Player->TryAllocate(FCString::Atoi(*BoxName.ToString()));
-	}
-}
-
-void AFNHUD::NotifyHitBoxBeginCursorOver(FName BoxName)
-{
-	HoveredNode = FCString::Atoi(*BoxName.ToString());
-}
-
-void AFNHUD::NotifyHitBoxEndCursorOver(FName BoxName)
-{
-	if (HoveredNode == FCString::Atoi(*BoxName.ToString()))
-	{
-		HoveredNode = -1;
+		const bool bOpen = UFNSkillTree::IsSectorOpen(N.God);
+		static const TCHAR* Kinds[] = { TEXT("СЕРДЦЕ"), TEXT("МАЛЫЙ УЗЕЛ"), TEXT("ЗНАЧИМЫЙ УЗЕЛ"), TEXT("КЛЮЧЕВОЙ УЗЕЛ") };
+		const FString Head = FString::Printf(TEXT("%s  ·  %s"), Kinds[static_cast<int32>(N.Kind)], *FString(UFNSkillTree::GodName(N.God)).ToUpper());
+		const FString Name = bOpen ? N.Name : FString(TEXT("???"));
+		const FString Desc = bOpen ? N.Desc : (N.God >= 0 ? FString::Printf(TEXT("Ветвь в тумане. Откроется, когда %s вернётся — в Нави."), UFNSkillTree::GodName(N.God)) : N.Desc);
+		FString Foot;
+		FLinearColor FootCol = Gold;
+		if (bOpen)
+		{
+			if (Tree->IsLockedByRune(HoveredNode)) { Foot = TEXT("Под печатью: нужна руна-ключ. Её роняют твари Высей."); FootCol = Hex(TEXT("c9a0ff")); }
+			else if (Tree->IsAllocated(HoveredNode)) { Foot = HoveredNode == 0 ? TEXT("Начало пути") : TEXT("Изучено  ·  ПКМ — вернуть"); }
+			else if (PreviewPath.Num() > 0)
+			{
+				const int32 Cost = PreviewPath.Num();
+				Foot = FString::Printf(TEXT("Путь: %d %s%s"), Cost, Cost == 1 ? TEXT("очко") : (Cost < 5 ? TEXT("очка") : TEXT("очков")), Cost > Points ? TEXT("  —  не хватает") : TEXT(""));
+				if (Cost > Points) { FootCol = BloodHi; }
+			}
+			else { Foot = TEXT("Нет пути: мешает печать"); FootCol = BoneDim; }
+		}
+		float DW = 0.f, DH = 0.f, NW = 0.f, NH = 0.f, FW = 0.f, FH = 0.f;
+		GetTextSize(Desc, DW, DH, Font(2, 17.f));
+		GetTextSize(Name, NW, NH, Font(1, 22.f));
+		GetTextSize(Foot, FW, FH, Font(2, 15.f));
+		const float CardW = FMath::Max3(260.f, DW / S, FMath::Max(NW, FW) / S) + 32.f;
+		const float CardH = Foot.IsEmpty() ? 92.f : 118.f;
+		float MX = 0.f, MY = 0.f;
+		if (APlayerController* PC = GetOwningPlayerController()) { PC->GetMousePosition(MX, MY); }
+		const float TX = FMath::Min(MX / S + 18.f, W - CardW - 10.f), TY = FMath::Min(MY / S + 14.f, H - CardH - 10.f);
+		FillBevel(TX, TY, CardW, CardH, 10.f, Hex(TEXT("120e0a"), 0.95f));
+		LineBevel(TX, TY, CardW, CardH, 10.f, Line, 1.f);
+		Txt(Head, TX + 16.f, TY + 10.f, Font(2, 13.f), BoneDim);
+		Txt(Name, TX + 16.f, TY + 28.f, Font(1, 22.f), Bone);
+		Txt(Desc, TX + 16.f, TY + 58.f, Font(2, 17.f), Bone);
+		if (!Foot.IsEmpty()) { Txt(Foot, TX + 16.f, TY + 88.f, Font(2, 15.f), FootCol); }
 	}
 }
 
