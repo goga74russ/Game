@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Древо Навь v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Ruslan+Display&display=swap" rel="stylesheet">
+<style>
+:root{--bone:#e8dfc8;--dim:#a89f8a;--gold:#b8955a;--line:#b8955a88;--ink:#0d0b09ee;--ember:#6fdcff}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#070605;overflow:hidden;font-family:'Cormorant Garamond',serif;color:var(--bone);user-select:none}
+#stage{position:absolute;inset:0;cursor:grab}
+#stage.drag{cursor:grabbing}
+#svg{width:100%;height:100%;display:block}
+.t{text-shadow:0 1px 2px #000,0 0 8px #000}
+/* chrome */
+.top{position:absolute;top:14px;left:0;right:0;text-align:center;pointer-events:none}
+.top h1{font-family:'Ruslan Display';font-weight:400;font-size:34px;letter-spacing:8px}
+.top .sub{font-style:italic;color:var(--dim);font-size:17px;margin-top:-2px}
+.orn{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:6px}
+.orn span{height:1px;width:240px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.stats{position:absolute;top:22px;right:28px;text-align:right;pointer-events:none}
+.stats .big{font-size:40px;font-weight:700;line-height:1}
+.stats .lbl{color:var(--dim);font-size:15px;letter-spacing:1px}
+.stats .keys{margin-top:10px;font-size:18px;color:var(--gold)}
+.legend{position:absolute;left:24px;bottom:22px;font-size:15px;color:var(--dim);line-height:1.6;pointer-events:none}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;vertical-align:-1px}
+.help{position:absolute;right:26px;bottom:22px;font-size:15px;color:var(--dim);text-align:right;font-style:italic;pointer-events:none}
+.tip{position:absolute;pointer-events:none;min-width:260px;max-width:340px;padding:12px 16px 14px;background:#120e0af2;
+  border:1px solid var(--line);clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);display:none}
+.tip .k{font-size:13px;letter-spacing:2px;color:var(--dim);text-transform:uppercase}
+.tip .n{font-size:22px;font-weight:700;margin:2px 0 4px}
+.tip .d{font-size:17px;line-height:1.3}
+.tip .c{margin-top:8px;font-size:15px;color:var(--gold)}
+.tip .lock{margin-top:8px;font-size:15px;color:#c9a0ff}
+.vign{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,transparent 45%,#000c 100%)}
+.grain{position:absolute;inset:0;pointer-events:none;opacity:.10;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+@keyframes flow{to{stroke-dashoffset:-40}}
+.flow{animation:flow 1.6s linear infinite}
+@keyframes breathe{50%{opacity:.55}}
+.avail{animation:breathe 1.8s ease-in-out infinite}
+</style>
+</head>
+<body>
+<div id="stage"><svg id="svg"></svg></div>
+<div class="vign"></div><div class="grain"></div>
+
+<div class="top t">
+  <h1>ДРЕВО</h1>
+  <div class="sub">восемь ветвей — восемь богов · открыта ветвь Перуна</div>
+  <div class="orn"><span></span><svg width="18" height="18" viewBox="0 0 24 24"><path d="M13 2 5 14h6l-2 8 10-13h-6z" fill="none" stroke="#b8955a" stroke-width="1.5"/></svg><span></span></div>
+</div>
+<div class="stats t">
+  <div class="big" id="pts">12</div><div class="lbl">очков древа</div>
+  <div class="keys" id="keys">печати: 2 / 7</div>
+</div>
+<div class="legend t">
+  <div><i style="background:#6fdcff;box-shadow:0 0 8px #6fdcff"></i>изучено</div>
+  <div><i style="background:#e8dfc8"></i>доступно</div>
+  <div><i style="background:#4a443a"></i>нужен путь</div>
+  <div><i style="background:#3a2a4a;border:1px solid #c9a0ff"></i>под печатью — нужна руна-ключ</div>
+  <div><i style="background:#222;border:1px dashed #666"></i>в тумане — ветвь другого бога</div>
+</div>
+<div class="help t">ЛКМ — изучить путь · ПКМ — вернуть очко<br>колесо — масштаб · тащить — сдвиг</div>
+<div class="tip" id="tip"></div>
+
+<script>
+// ---------- data: 8 god sectors in the ring order of GDD §3, Perun on top ----------
+const GODS=[
+ {id:'perun',name:'Перун',el:'Гром',col:'#6fdcff',open:true},
+ {id:'veles',name:'Велес',el:'Ртуть',col:'#a9c2cf'},
+ {id:'mokosh',name:'Мокошь',el:'Нити',col:'#d7a6e0'},
+ {id:'yarilo',name:'Ярило',el:'Ярь-кровь',col:'#d0503a'},
+ {id:'cherno',name:'Чернобог',el:'Порча',col:'#86c45a'},
+ {id:'dazh',name:'Дажьбог',el:'Солнце',col:'#ffd36a'},
+ {id:'stri',name:'Стрибог',el:'Ветер',col:'#cfe8e0'},
+ {id:'svar',name:'Сварог',el:'Жар',col:'#ff8a4a'},
+];
+// Perun: the 21 demo nodes (FNSkillTree) placed along the limb + extra clusters for scale.
+const PERUN_SMALL=['+10% урона выстрелов','+25% запаса патронов','+15% скорости перезарядки','+10% скорострельности','+15 к здоровью','+25% урона удара','+20% восстановления выносливости','+8% скорости','−20% цены уклонения','+15% урона удара'];
+const PERUN_NOTABLE=[['Громовой Шлейф','+20% к скорострельности.'],['Заговор на Сталь','+30% урона по слабым местам.'],['Закалка','Получаешь на 15% меньше урона.'],['Лёгкая Стопа','+15% скорости, уклонение на 25% дешевле.'],['Ярь Крови','Каждый удар вблизи лечит на 6.'],['Раскат','Выстрел в уязвимое место оглушает на 0,3 с.']];
+const PERUN_KEY=[['Шаровая Молния','КЛЮЧЕВОЙ: урон выстрелов в 1,3 раза БОЛЬШЕ, но −20% здоровья.'],['Костяной Вал','КЛЮЧЕВОЙ: +0,15 с неуязвимости при уклонении, в 1,1 раза МЕНЬШЕ урона, −15% скорострельности.']];
+
+let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646};
+const nodes=[],edges=[];
+function add(n){n.i=nodes.length;n.links=[];nodes.push(n);return n.i}
+function link(a,b){edges.push([a,b]);nodes[a].links.push(b);nodes[b].links.push(a)}
+const P=(r,a)=>({x:r*Math.cos(a),y:r*Math.sin(a)});
+
+const root=add({...P(0,0),kind:'root',name:'Искра',desc:'Сердце древа. С неё начинается любой путь.',g:0});
+const sectorStart=[];
+GODS.forEach((g,gi)=>{
+  const a0=-Math.PI/2+gi*Math.PI/4;           // limb angle
+  const open=!!g.open;
+  let si=0,ni=0,ki=0;
+  const small=()=>open?PERUN_SMALL[(si++)%PERUN_SMALL.length]:'+?% '+g.el.toLowerCase();
+  const notable=()=>open?PERUN_NOTABLE[(ni++)%PERUN_NOTABLE.length]:['Узел '+g.name+'а','Скрыто туманом.'];
+  // limb: trunk nodes from r=130 to r=620
+  const limb=[];
+  let prev=root;
+  const gate=add({...P(130,a0),kind:'notable',name:open?'Врата Грома':'Врата: '+g.name,desc:open?'Вход в ветвь Перуна. +5% урона громом.':'Ветвь '+g.name+'а откроется в Нави.',g:gi});
+  link(prev,gate);prev=gate;limb.push(gate);sectorStart.push(gate);
+  for(let k=1;k<=5;k++){
+    const r=130+k*100, a=a0+Math.sin(k*1.7+gi)*0.05;
+    const id=add({...P(r,a),kind:'small',name:small(),desc:'Малый узел.',g:gi});
+    link(prev,id);prev=id;limb.push(id);
+  }
+  // clusters branching left and right from limb nodes 1,3,5
+  [[1,-1],[2,1],[3,-1],[4,1],[5,-1],[5,1]].forEach(([li,side],ci)=>{
+    const base=nodes[limb[li]];
+    const br=Math.hypot(base.x,base.y);
+    const ang=Math.atan2(base.y,base.x)+side*(0.13+0.05*ci/6);
+    let p=limb[li];
+    const len=3+(ci%2);
+    for(let k=1;k<=len;k++){
+      const r=br+k*38, a=ang+side*k*0.055;
+      const id=add({...P(r,a),kind:'small',name:small(),desc:'Малый узел.',g:gi});
+      link(p,id);p=id;
+    }
+    const [nn,nd]=notable();
+    const nid=add({...P(br+len*38+44,ang+side*(len*0.055+0.05)),kind:'notable',name:nn,desc:nd,g:gi});
+    link(p,nid);
+  });
+  // keystones at the tip, fan of two
+  [-1,1].forEach(side=>{
+    const [kn,kd]=open?PERUN_KEY[(ki++)%2]:['Ключевой узел','Скрыто туманом.'];
+    const a=a0+side*0.07;
+    const pre=add({...P(730,a),kind:'small',name:small(),desc:'Малый узел.',g:gi});
+    link(limb[5],pre);
+    const kid=add({...P(830,a+side*0.02),kind:'key',name:kn,desc:kd,g:gi});
+    link(pre,kid);
+  });
+});
+// outer ring bridges between neighbouring sectors (PoE-style wheel)
+GODS.forEach((g,gi)=>{
+  const a=-Math.PI/2+gi*Math.PI/4+Math.PI/8;
+  const b1=add({...P(470,a),kind:'small',name:'Межа',desc:'Малый узел на стыке ветвей: +4% ко всем сопротивлениям.',g:-1});
+  const next=(gi+1)%8;
+  // connect to nearest limb node of each side (limb index 3 at r=430)
+  link(b1,sectorStart[gi]+3);link(b1,sectorStart[next]+3);
+});
+// rune seals: some Perun notables and keystones
+const seals=nodes.filter(n=>n.g===0&&(n.kind==='notable'||n.kind==='key')&&n.name!=='Врата Грома');
+seals.forEach((n,k)=>{n.seal=n.kind==='key'||k%3===2});   // some notables and both keystones sit under rune seals
+const alloc=new Set([root]);
+let points=12;
+
+// ---------- rendering ----------
+const svg=document.getElementById('svg');
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e};
+const defs=el('defs',{});
+defs.innerHTML=`
+ <radialGradient id="bg" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#1d1812"/><stop offset=".6" stop-color="#110d09"/><stop offset="1" stop-color="#070605"/></radialGradient>
+ <radialGradient id="heart" cx="50%" cy="45%" r="50%"><stop offset="0" stop-color="#fff6dc"/><stop offset=".35" stop-color="#6fdcff"/><stop offset="1" stop-color="#6fdcff00"/></radialGradient>
+ <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="fog" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency=".012" numOctaves="3" seed="4"/><feColorMatrix values="0 0 0 0 .55  0 0 0 0 .52  0 0 0 0 .48  0 0 0 .9 -.25"/><feGaussianBlur stdDeviation="6"/></filter>
+ <filter id="soft" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="40"/></filter>
+ <pattern id="stitch" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M18 4 32 18 18 32 4 18Z M18 11 25 18 18 25 11 18Z" fill="none" stroke="#b8955a" stroke-width="1" opacity=".07"/></pattern>
+`;
+el('rect',{x:-5000,y:-5000,width:10000,height:10000,fill:'url(#bg)'});
+const world=el('g',{});
+el('rect',{x:-1400,y:-1400,width:2800,height:2800,fill:'url(#stitch)'},world);
+
+// oak silhouette hints: trunk + roots below the heart, crown ring
+const deco=el('g',{opacity:.55},world);
+el('path',{d:'M-38 40 C-30 160 -60 260 -150 360 M38 40 C30 160 60 260 150 360 M0 50 C0 200 -10 300 0 420 M-20 60 C-80 180 -200 240 -320 280 M20 60 C80 180 200 240 320 280',
+  stroke:'#3a2e20',fill:'none','stroke-width':6,'stroke-linecap':'round',opacity:.35},deco);
+el('circle',{r:930,fill:'none',stroke:'#b8955a',opacity:.10,'stroke-width':1,'stroke-dasharray':'2 10'},deco);
+el('circle',{r:560,fill:'none',stroke:'#b8955a',opacity:.07,'stroke-width':1},deco);
+
+// branches: tapered bezier "wood" under the node links
+const branchG=el('g',{},world), edgeG=el('g',{},world), fogG=el('g',{},world), nodeG=el('g',{},world), labelG=el('g',{},world);
+const curve=(a,b)=>{const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,o=l*0.12*(((a.i+b.i)%2)?1:-1);return `M${a.x} ${a.y} Q${mx-dy/l*o} ${my+dx/l*o} ${b.x} ${b.y}`};
+const edgeEls=edges.map(([a,b])=>{
+  const A=nodes[a],B=nodes[b],d=curve(A,B);
+  const r=Math.min(Math.hypot(A.x,A.y),Math.hypot(B.x,B.y));
+  const w=Math.max(2,11-r/70);
+  el('path',{d,stroke:'#2b2218',fill:'none','stroke-width':w+4,'stroke-linecap':'round'},branchG);
+  el('path',{d,stroke:'#4a3b28',fill:'none','stroke-width':w,'stroke-linecap':'round'},branchG);
+  const lit=el('path',{d,stroke:'#6fdcff',fill:'none','stroke-width':Math.max(2,w*0.45),'stroke-linecap':'round',opacity:0},edgeG);
+  const flow=el('path',{d,stroke:'#e9fbff',fill:'none','stroke-width':1.5,'stroke-dasharray':'6 14',class:'flow',opacity:0},edgeG);
+  const prev=el('path',{d,stroke:'#e8dfc8',fill:'none','stroke-width':2,'stroke-dasharray':'3 5',opacity:0},edgeG);
+  return {a,b,lit,flow,prev};
+});
+
+// fog over closed sectors
+GODS.forEach((g,gi)=>{
+  if(g.open)return;
+  const a0=-Math.PI/2+gi*Math.PI/4, w=Math.PI/8;
+  const r1=100,r2=960;
+  const p=(r,a)=>`${r*Math.cos(a)} ${r*Math.sin(a)}`;
+  el('path',{d:`M${p(r1,a0-w)} L${p(r2,a0-w)} A${r2} ${r2} 0 0 1 ${p(r2,a0+w)} L${p(r1,a0+w)} A${r1} ${r1} 0 0 0 ${p(r1,a0-w)}Z`,fill:'#0b0907',opacity:.6},fogG);
+  for(let k=0;k<9;k++){const r=180+rnd()*720,a=a0+(rnd()-.5)*w*1.8,c=P(r,a);el('circle',{cx:c.x,cy:c.y,r:90+rnd()*120,fill:'#cfc6b0',opacity:.05+rnd()*.05,filter:'url(#soft)'},fogG)}
+  const L=P(1010,a0);
+  const t=el('text',{x:L.x,y:L.y,'text-anchor':'middle','font-family':'Ruslan Display','font-size':30,fill:g.col,opacity:.45,'letter-spacing':4},labelG);t.textContent=g.name.toUpperCase();
+  const t2=el('text',{x:L.x,y:L.y+26,'text-anchor':'middle','font-style':'italic','font-size':19,fill:'#a89f8a',opacity:.7},labelG);t2.textContent=g.el+' · откроется в Нави';
+});
+{const L=P(1010,-Math.PI/2);
+ const t=el('text',{x:L.x,y:L.y,'text-anchor':'middle','font-family':'Ruslan Display','font-size':34,fill:'#6fdcff',filter:'url(#glow)','letter-spacing':5},labelG);t.textContent='ПЕРУН';
+ const t2=el('text',{x:L.x,y:L.y+28,'text-anchor':'middle','font-style':'italic','font-size':20,fill:'#a89f8a'},labelG);t2.textContent='Гром · Грозовые Выси';}
+
+// icons (line art, 24x24 box)
+const ICONS={
+ bolt:'M13 2 5 14h6l-2 8 10-13h-6z', shield:'M12 3 20 6v6c0 5-4 8-8 9-4-1-8-4-8-9V6z', bone:'M7 5a2 2 0 1 0-2 2l12 12a2 2 0 1 0 2-2 2 2 0 1 0-2-2L5 5',
+ foot:'M8 3c3 0 4 4 4 7s-1 5-3 5-3-2-3-5 0-7 2-7zM14 14c2 0 4 2 4 4s-1 3-3 3-3-1-3-3 0-4 2-4z', eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',
+ flame:'M12 3c2 4 5 5 5 10a5 5 0 0 1-10 0c0-3 2-4 2-7 2 2 3 2 3-3z', drop:'M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z', ring:'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8',
+ sun:'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10M12 1v3M12 20v3M1 12h3M20 12h3M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2', wind:'M3 8h11a3 3 0 1 0-3-3M3 16h15a3 3 0 1 1-3 3M3 12h8',
+ spindle:'M12 2v20M8 6h8M7 10h10M8 14h8M10 18h4', skull:'M12 3a7 7 0 0 0-7 7v4l2 2v3h10v-3l2-2v-4a7 7 0 0 0-7-7zM9 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M15 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3'
+};
+const PERUN_ICON={'Громовой Шлейф':'bolt','Заговор на Сталь':'eye','Закалка':'shield','Лёгкая Стопа':'foot','Ярь Крови':'drop','Раскат':'ring','Шаровая Молния':'bolt','Костяной Вал':'bone','Врата Грома':'bolt'};
+const GOD_ICON=['bolt','drop','spindle','flame','skull','sun','wind','flame'];
+
+const nodeEls=nodes.map(n=>{
+  const g=el('g',{transform:`translate(${n.x} ${n.y})`,style:'cursor:pointer'},nodeG);
+  const R=n.kind==='root'?34:n.kind==='key'?30:n.kind==='notable'?20:9;
+  n.R=R;
+  const halo=el('circle',{r:R+10,fill:'#6fdcff',opacity:0,filter:'url(#glow)'},g);
+  let body;
+  if(n.kind==='notable'){ body=el('rect',{x:-R,y:-R,width:2*R,height:2*R,transform:'rotate(45)',fill:'#15110d','stroke-width':2},g); el('rect',{x:-R+5,y:-R+5,width:2*R-10,height:2*R-10,transform:'rotate(45)',fill:'none',stroke:'#b8955a',opacity:.5},g) }
+  else if(n.kind==='key'){ body=el('circle',{r:R,fill:'#15110d','stroke-width':2.5},g); el('circle',{r:R+6,fill:'none',stroke:'#b8955a','stroke-dasharray':'3 4',opacity:.8},g);
+    for(let k=0;k<8;k++){const a=k*Math.PI/4;el('path',{d:`M${(R+6)*Math.cos(a)} ${(R+6)*Math.sin(a)} L${(R+13)*Math.cos(a)} ${(R+13)*Math.sin(a)}`,stroke:'#b8955a','stroke-width':1.5},g)} }
+  else if(n.kind==='root'){ el('circle',{r:R+26,fill:'url(#heart)',opacity:.55},g); body=el('circle',{r:R,fill:'#10171a','stroke-width':3},g);
+    el('circle',{r:12,fill:'#e9fbff',filter:'url(#glow)'},g) }
+  else body=el('circle',{r:R,fill:'#15110d','stroke-width':2},g);
+  let icon=null;
+  if(n.kind==='notable'||n.kind==='key'){
+    const name=n.g===0?(PERUN_ICON[n.name]||'bolt'):GOD_ICON[Math.max(0,n.g)];
+    const s=n.kind==='key'?1.35:0.95;
+    icon=el('path',{d:ICONS[name],transform:`scale(${s}) translate(-12 -12)`,fill:'none','stroke-width':1.6,'stroke-linecap':'round','stroke-linejoin':'round'},g);
+  }
+  let sealEl=null;
+  if(n.seal){ sealEl=el('g',{},g); el('circle',{r:R+4,fill:'#2a1e38',opacity:.85},sealEl);
+    el('path',{d:'M-6 -1h12v9h-12z M-4 -1v-3a4 4 0 0 1 8 0v3',fill:'none',stroke:'#c9a0ff','stroke-width':1.6},sealEl) }
+  g.addEventListener('mouseenter',e=>hover(n.i,e));
+  g.addEventListener('mousemove',e=>moveTip(e));
+  g.addEventListener('mouseleave',()=>hover(-1));
+  g.addEventListener('click',e=>{e.stopPropagation();allocate(n.i)});
+  g.addEventListener('contextmenu',e=>{e.preventDefault();refund(n.i)});
+  return {g,body,halo,icon,sealEl};
+});
+
+// ---------- logic ----------
+const openNode=n=>n.i===root||(n.g===0)||(n.g===-1&&false);
+const passable=n=>openNode(n)&&!n.seal;
+function pathTo(t){ // BFS from allocated set over passable nodes
+  if(alloc.has(t))return [];
+  if(!passable(nodes[t]))return null;
+  const prev=new Map(),q=[...alloc];q.forEach(a=>prev.set(a,-1));
+  while(q.length){const c=q.shift();for(const l of nodes[c].links){if(prev.has(l)||!passable(nodes[l]))continue;prev.set(l,c);if(l===t){const p=[];let x=t;while(!alloc.has(x)){p.push(x);x=prev.get(x)}return p.reverse()}q.push(l)}}
+  return null;
+}
+let hovered=-1,preview=new Set();
+function hover(i,e){hovered=i;preview=new Set();if(i>=0){const p=pathTo(i);if(p)p.forEach(x=>preview.add(x))}paint();if(i>=0)showTip(i,e);else tip.style.display='none'}
+function allocate(i){const p=pathTo(i);if(!p||!p.length)return;if(p.length>points){flash();return}p.forEach(x=>alloc.add(x));points-=p.length;preview=new Set();paint();showTip(i)}
+function refund(i){if(i===root||!alloc.has(i))return;alloc.delete(i);// keep only nodes still connected to root
+  const ok=new Set([root]),q=[root];while(q.length){const c=q.shift();for(const l of nodes[c].links)if(alloc.has(l)&&!ok.has(l)){ok.add(l);q.push(l)}}
+  let back=0;[...alloc].forEach(x=>{if(!ok.has(x)){alloc.delete(x);back++}});points+=1+back;paint()}
+function flash(){const e=document.getElementById('pts');e.style.color='#d0503a';setTimeout(()=>e.style.color='',400)}
+function paint(){
+  document.getElementById('pts').textContent=points;
+  nodes.forEach((n,i)=>{
+    const E=nodeEls[i],a=alloc.has(i),open=openNode(n);
+    const avail=!a&&passable(n)&&n.links.some(l=>alloc.has(l));
+    const col=a?'#6fdcff':(preview.has(i)?'#e8dfc8':(avail?'#e8dfc8':(n.seal?'#8a6fb0':(open?'#5a5244':'#2e2a24'))));
+    E.body.setAttribute('stroke',col);
+    E.body.setAttribute('fill',a?'#10252c':(open?'#15110d':'#0e0c0a'));
+    if(E.icon)E.icon.setAttribute('stroke',a?'#dff7ff':(open?(avail||preview.has(i)?'#e8dfc8':'#6d6555'):'#2e2a24'));
+    E.halo.setAttribute('opacity',a?(n.kind==='small'?.35:.55):(preview.has(i)?.18:0));
+    E.halo.setAttribute('fill',a?'#6fdcff':'#e8dfc8');
+    E.g.classList.toggle('avail',avail&&!preview.has(i));
+    E.g.setAttribute('opacity',open?1:.35);
+  });
+  edgeEls.forEach(E=>{
+    const on=alloc.has(E.a)&&alloc.has(E.b);
+    const pv=(preview.has(E.a)||alloc.has(E.a))&&(preview.has(E.b)||alloc.has(E.b))&&!on&&(preview.has(E.a)||preview.has(E.b));
+    E.lit.setAttribute('opacity',on?.85:0);E.flow.setAttribute('opacity',on?.8:0);E.prev.setAttribute('opacity',pv?.9:0);
+  });
+}
+const tip=document.getElementById('tip');
+function showTip(i,e){
+  const n=nodes[i];const open=openNode(n);
+  const kind={root:'сердце',small:'малый узел',notable:'значимый узел',key:'ключевой узел'}[n.kind];
+  const god=n.g>=0?GODS[n.g].name:'межа';
+  const p=pathTo(i);
+  let html=`<div class="k">${kind} · ${god}</div>`;
+  if(!open){html+=`<div class="n">???</div><div class="d">Ветвь в тумане. Откроется, когда ${GODS[n.g].name} вернётся — в Нави.</div>`}
+  else{html+=`<div class="n">${n.name}</div><div class="d">${n.desc}</div>`;
+    if(n.seal)html+=`<div class="lock">Под печатью: нужна руна-ключ. Её роняют твари Высей.</div>`;
+    else if(alloc.has(i))html+=`<div class="c">Изучено · ПКМ — вернуть</div>`;
+    else if(p)html+=`<div class="c">Путь: ${p.length} ${p.length===1?'очко':(p.length<5?'очка':'очков')}${p.length>points?' — не хватает':''}</div>`;
+    else html+=`<div class="c" style="color:#8a8070">Нет пути: мешает печать</div>`}
+  tip.innerHTML=html;tip.style.display='block';if(e)moveTip(e)}
+function moveTip(e){tip.style.left=Math.min(innerWidth-360,e.clientX+18)+'px';tip.style.top=Math.min(innerHeight-160,e.clientY+14)+'px'}
+
+// ---------- pan / zoom ----------
+let view={x:0,y:480,k:0.58};
+function applyView(){world.setAttribute('transform',`translate(${innerWidth/2+view.x*view.k} ${innerHeight/2+view.y*view.k}) scale(${view.k})`)}
+const stage=document.getElementById('stage');let drag=null;
+stage.addEventListener('mousedown',e=>{if(e.button!==0)return;drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};stage.classList.add('drag')});
+addEventListener('mousemove',e=>{if(!drag)return;view.x=drag.vx+(e.clientX-drag.x)/view.k;view.y=drag.vy+(e.clientY-drag.y)/view.k;applyView()});
+addEventListener('mouseup',()=>{drag=null;stage.classList.remove('drag')});
+stage.addEventListener('wheel',e=>{e.preventDefault();const k0=view.k,k1=Math.min(2.2,Math.max(0.28,k0*(e.deltaY<0?1.12:1/1.12)));
+  const mx=e.clientX-innerWidth/2,my=e.clientY-innerHeight/2;view.x+=mx/k1-mx/k0;view.y+=my/k1-my/k0;view.k=k1;applyView()},{passive:false});
+stage.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('resize',applyView);
+// a few nodes pre-learned so the look reads at once
+[...(pathTo(sectorStart[0]+2)||[])].forEach(x=>alloc.add(x));points-=alloc.size-1;
+applyView();paint();
+</script>
+</body>
+</html>
