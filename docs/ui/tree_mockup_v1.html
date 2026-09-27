@@ -5,7 +5,7 @@
 <title>Древо Навь v1</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Ruslan+Display&display=swap" rel="stylesheet">
 <style>
-:root{--bone:#e8dfc8;--dim:#a89f8a;--gold:#b8955a;--line:#b8955a88;--ink:#0d0b09ee;--ember:#6fdcff}
+:root{--bone:#e8dfc8;--dim:#a89f8a;--gold:#b8955a;--line:#b8955a88;--ink:#0d0b09ee;--ember:#8fa8ff}
 *{box-sizing:border-box;margin:0}
 html,body{height:100%;background:#070605;overflow:hidden;font-family:'Cormorant Garamond',serif;color:var(--bone);user-select:none}
 #stage{position:absolute;inset:0;cursor:grab}
@@ -55,7 +55,7 @@ html,body{height:100%;background:#070605;overflow:hidden;font-family:'Cormorant 
   <div class="keys" id="keys">печати: 2 / 7</div>
 </div>
 <div class="legend t">
-  <div><i style="background:#6fdcff;box-shadow:0 0 8px #6fdcff"></i>изучено</div>
+  <div><i style="background:#8fa8ff;box-shadow:0 0 8px #8fa8ff"></i>изучено</div>
   <div><i style="background:#e8dfc8"></i>доступно</div>
   <div><i style="background:#4a443a"></i>нужен путь</div>
   <div><i style="background:#3a2a4a;border:1px solid #c9a0ff"></i>под печатью — нужна руна-ключ</div>
@@ -67,7 +67,7 @@ html,body{height:100%;background:#070605;overflow:hidden;font-family:'Cormorant 
 <script>
 // ---------- data: 8 god sectors in the ring order of GDD §3, Perun on top ----------
 const GODS=[
- {id:'perun',name:'Перун',el:'Гром',col:'#6fdcff',open:true},
+ {id:'perun',name:'Перун',el:'Гром',col:'#8fa8ff',open:true},
  {id:'veles',name:'Велес',el:'Ртуть',col:'#a9c2cf'},
  {id:'mokosh',name:'Мокошь',el:'Нити',col:'#d7a6e0'},
  {id:'yarilo',name:'Ярило',el:'Ярь-кровь',col:'#d0503a'},
@@ -152,7 +152,7 @@ const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.set
 const defs=el('defs',{});
 defs.innerHTML=`
  <radialGradient id="bg" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#1d1812"/><stop offset=".6" stop-color="#110d09"/><stop offset="1" stop-color="#070605"/></radialGradient>
- <radialGradient id="heart" cx="50%" cy="45%" r="50%"><stop offset="0" stop-color="#fff6dc"/><stop offset=".35" stop-color="#6fdcff"/><stop offset="1" stop-color="#6fdcff00"/></radialGradient>
+ <radialGradient id="heart" cx="50%" cy="45%" r="50%"><stop offset="0" stop-color="#fff6dc"/><stop offset=".35" stop-color="#8fa8ff"/><stop offset="1" stop-color="#8fa8ff00"/></radialGradient>
  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="fog" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency=".012" numOctaves="3" seed="4"/><feColorMatrix values="0 0 0 0 .55  0 0 0 0 .52  0 0 0 0 .48  0 0 0 .9 -.25"/><feGaussianBlur stdDeviation="6"/></filter>
  <filter id="soft" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="40"/></filter>
@@ -178,7 +178,7 @@ const edgeEls=edges.map(([a,b])=>{
   const w=Math.max(2,11-r/70);
   el('path',{d,stroke:'#2b2218',fill:'none','stroke-width':w+4,'stroke-linecap':'round'},branchG);
   el('path',{d,stroke:'#4a3b28',fill:'none','stroke-width':w,'stroke-linecap':'round'},branchG);
-  const lit=el('path',{d,stroke:'#6fdcff',fill:'none','stroke-width':Math.max(2,w*0.45),'stroke-linecap':'round',opacity:0},edgeG);
+  const lit=el('path',{d,stroke:'#8fa8ff',fill:'none','stroke-width':Math.max(2,w*0.45),'stroke-linecap':'round',opacity:0},edgeG);
   const flow=el('path',{d,stroke:'#e9fbff',fill:'none','stroke-width':1.5,'stroke-dasharray':'6 14',class:'flow',opacity:0},edgeG);
   const prev=el('path',{d,stroke:'#e8dfc8',fill:'none','stroke-width':2,'stroke-dasharray':'3 5',opacity:0},edgeG);
   return {a,b,lit,flow,prev};
@@ -197,7 +197,7 @@ GODS.forEach((g,gi)=>{
   const t2=el('text',{x:L.x,y:L.y+26,'text-anchor':'middle','font-style':'italic','font-size':19,fill:'#a89f8a',opacity:.7},labelG);t2.textContent=g.el+' · откроется в Нави';
 });
 {const L=P(1010,-Math.PI/2);
- const t=el('text',{x:L.x,y:L.y,'text-anchor':'middle','font-family':'Ruslan Display','font-size':34,fill:'#6fdcff',filter:'url(#glow)','letter-spacing':5},labelG);t.textContent='ПЕРУН';
+ const t=el('text',{x:L.x,y:L.y,'text-anchor':'middle','font-family':'Ruslan Display','font-size':34,fill:'#8fa8ff',filter:'url(#glow)','letter-spacing':5},labelG);t.textContent='ПЕРУН';
  const t2=el('text',{x:L.x,y:L.y+28,'text-anchor':'middle','font-style':'italic','font-size':20,fill:'#a89f8a'},labelG);t2.textContent='Гром · Грозовые Выси';}
 
 // icons (line art, 24x24 box)
@@ -215,7 +215,7 @@ const nodeEls=nodes.map(n=>{
   const g=el('g',{transform:`translate(${n.x} ${n.y})`,style:'cursor:pointer'},nodeG);
   const R=n.kind==='root'?34:n.kind==='key'?30:n.kind==='notable'?20:9;
   n.R=R;
-  const halo=el('circle',{r:R+10,fill:'#6fdcff',opacity:0,filter:'url(#glow)'},g);
+  const halo=el('circle',{r:R+10,fill:'#8fa8ff',opacity:0,filter:'url(#glow)'},g);
   let body;
   if(n.kind==='notable'){ body=el('rect',{x:-R,y:-R,width:2*R,height:2*R,transform:'rotate(45)',fill:'#15110d','stroke-width':2},g); el('rect',{x:-R+5,y:-R+5,width:2*R-10,height:2*R-10,transform:'rotate(45)',fill:'none',stroke:'#b8955a',opacity:.5},g) }
   else if(n.kind==='key'){ body=el('circle',{r:R,fill:'#15110d','stroke-width':2.5},g); el('circle',{r:R+6,fill:'none',stroke:'#b8955a','stroke-dasharray':'3 4',opacity:.8},g);
@@ -262,12 +262,12 @@ function paint(){
   nodes.forEach((n,i)=>{
     const E=nodeEls[i],a=alloc.has(i),open=openNode(n);
     const avail=!a&&passable(n)&&n.links.some(l=>alloc.has(l));
-    const col=a?'#6fdcff':(preview.has(i)?'#e8dfc8':(avail?'#e8dfc8':(n.seal?'#8a6fb0':(open?'#5a5244':'#2e2a24'))));
+    const col=a?'#8fa8ff':(preview.has(i)?'#e8dfc8':(avail?'#e8dfc8':(n.seal?'#8a6fb0':(open?'#5a5244':'#2e2a24'))));
     E.body.setAttribute('stroke',col);
     E.body.setAttribute('fill',a?'#10252c':(open?'#15110d':'#0e0c0a'));
     if(E.icon)E.icon.setAttribute('stroke',a?'#dff7ff':(open?(avail||preview.has(i)?'#e8dfc8':'#6d6555'):'#2e2a24'));
     E.halo.setAttribute('opacity',a?(n.kind==='small'?.35:.55):(preview.has(i)?.18:0));
-    E.halo.setAttribute('fill',a?'#6fdcff':'#e8dfc8');
+    E.halo.setAttribute('fill',a?'#8fa8ff':'#e8dfc8');
     E.g.classList.toggle('avail',avail&&!preview.has(i));
     E.g.setAttribute('opacity',open?1:.35);
   });

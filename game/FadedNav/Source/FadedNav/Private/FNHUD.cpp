@@ -691,7 +691,7 @@ void AFNHUD::DrawHUD()
 					const FVector2D Bolt[] = { { CX + 2.f, CY - 7.f }, { CX - 3.f, CY + 1.f }, { CX + 1.f, CY + 1.f }, { CX - 2.f, CY + 7.f } };
 					for (int32 k = 0; k < 3; ++k) { DrawLine(Bolt[k].X * S, Bolt[k].Y * S, Bolt[k + 1].X * S, Bolt[k + 1].Y * S, RC, 1.3f * S); }
 					Txt(D.Short, CX, SY + Slot - 15.f, Font(2, 11.f), bAfford ? Bone : BoneDim, EAlign::Center);
-					Txt(FString::Printf(TEXT("%.0f"), D.YarCost), SX + Slot - 4.f, SY + 1.f, Font(2, 11.f), Hex(TEXT("c8642a")), EAlign::Right);
+					Txt(FString::Printf(TEXT("%.0f"), D.YarCost), SX + Slot - 4.f, SY + 1.f, Font(2, 11.f), Player->GetSparkColor(), EAlign::Right);
 					const float CD = Player->GetSkillCooldownRatio(i);
 					if (CD > 0.f) { DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), (SX + 1.f) * S, (SY + 1.f + (Slot - 2.f) * (1.f - CD)) * S, (Slot - 2.f) * S, (Slot - 2.f) * CD * S); }
 				}
@@ -717,10 +717,12 @@ void AFNHUD::DrawHUD()
 				const float YW = 4.f * Slot + 3.f * Gap, YY = SY - 9.f;
 				DrawRect(Ink, X0 * S, YY * S, YW * S, 5.f * S);
 				const float Flare = FMath::Clamp(1.f - Player->GetPerfectDodgeAge() / 0.6f, 0.f, 1.f);
-				FLinearColor YC = FMath::Lerp(Hex(TEXT("c8642a")), Hex(TEXT("ffd29a")), Flare);
+				// Yar in the hero element colour (no copper = Svarog, no pale gold = loot); brighter on a perfect dodge.
+				const FLinearColor Elem = Player->GetSparkColor();
+				FLinearColor YC = FMath::Lerp(Elem * 0.75f, FLinearColor(0.85f, 0.88f, 1.f), Flare * 0.6f); YC.A = 1.f;
 				DrawRect(YC, X0 * S, YY * S, YW * Player->GetYarRatio() * S, 5.f * S);
 				Txt(TEXT("ярь"), X0 - 6.f, YY - 7.f, Font(3, 13.f), BoneDim, EAlign::Right);
-				if (Flare > 0.f) { Txt(TEXT("точно!"), X0 + YW * 0.5f, YY - 26.f, Font(1, 18.f), Hex(TEXT("ffd29a"), Flare), EAlign::Center); }
+				if (Flare > 0.f) { FLinearColor TC = Elem; TC.A = Flare; Txt(TEXT("точно!"), X0 + YW * 0.5f, YY - 26.f, Font(1, 18.f), TC, EAlign::Center); }
 			}
 
 			const float BX = X0 + 4.f * Slot + 3.f * Gap + 16.f;

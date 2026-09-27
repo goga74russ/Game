@@ -9,7 +9,7 @@ namespace
 	// GDD §3 ring order, Perun on top, clockwise.
 	const TCHAR* Gods[] = { TEXT("Перун"), TEXT("Велес"), TEXT("Мокошь"), TEXT("Ярило"), TEXT("Чернобог"), TEXT("Дажьбог"), TEXT("Стрибог"), TEXT("Сварог") };
 	const TCHAR* Elements[] = { TEXT("Гром"), TEXT("Ртуть"), TEXT("Нити"), TEXT("Ярь-кровь"), TEXT("Порча"), TEXT("Солнце"), TEXT("Ветер"), TEXT("Жар") };
-	const TCHAR* GodColors[] = { TEXT("6fdcff"), TEXT("a9c2cf"), TEXT("d7a6e0"), TEXT("d0503a"), TEXT("86c45a"), TEXT("ffd36a"), TEXT("cfe8e0"), TEXT("ff8a4a") };
+	const TCHAR* GodColors[] = { TEXT("8fa8ff"), TEXT("a9c2cf"), TEXT("d7a6e0"), TEXT("d0503a"), TEXT("86c45a"), TEXT("ffd36a"), TEXT("cfe8e0"), TEXT("ff8a4a") };
 	// Icon per closed sector (HUD line art): drop, spindle, flame, skull, sun, wind, flame.
 	const int32 GodIcons[] = { 1, 5, 8, 9, 10, 11, 12, 9 };
 

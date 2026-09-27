@@ -122,7 +122,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Evolution") int32 KillsToFlesh = 10;
 
 	// Colour of the Spark = element of the starting god/biome (Vysi / Perun: thunder blue). GDD §4.
-	UPROPERTY(EditAnywhere, Category = "Evolution") FLinearColor SparkColor = FLinearColor(0.15f, 0.75f, 1.f);
+	UPROPERTY(EditAnywhere, Category = "Evolution") FLinearColor SparkColor = FLinearColor(FColor::FromHex(TEXT("8FA8FF"))) /* Perun: cold blue-violet, docs/art/skills rune dictionary (director 2026-09-27) */;
 
 	// --- Tunables [D] = placeholder until playtest ---
 	UPROPERTY(EditAnywhere, Category = "Weapon") float ShotDamage = 25.f;
