@@ -55,7 +55,7 @@ namespace
 	{
 		switch (T)
 		{
-		case EFNMobType::Otrost: return TEXT("Отросток");
+		case EFNMobType::Otrost: return TEXT("Отрост");
 		case EFNMobType::Strelnik: return TEXT("Стрельник");
 		default: return TEXT("Рыхлец");
 		}
