@@ -1,6 +1,6 @@
-id,name_ru,chapter,biome,element,source,tag,rune_verb,rank,yar_cost,cooldown_s,damage,damage_basis,radius_m,range_m,arc_deg,delay_s,duration_s,stun_s,ammo_cost,iframes_s,notes,status
-thunder_strike,Громовой удар,C1-Yav,01-grom,гром,Перун (старт; Сухоречье),strike,площадь,D,20,4,1.8,weapon_melee,4,,120,0,,,0,,"Искра: круг 360° R 3 м от вспышки (15); Скелет: кулак 25; Плоть: колун +20%; Шок 30% — не сделан",in_game
-lightning_rod,Громоотвод,C1-Yav,01-grom,гром,Перун (Присяжный камень),spell,обездвиживание,D,30,10,45,flat,3,8,,1.5,,0.8,0,,"стержень в точку прицела; боссу — стак оглушения 30% (не сделано), иммунитет 15 с",in_game
-flare,Сполох,C1-Yav,01-grom,гром,Перун (Присяжный камень),spell,рывок,D,25,7,15,flat,,6,,0,,,0,0.25,"рывок сквозь врагов, разряд по пути 60%",in_game
-chain_spark,Цепная искра,C1-Yav,01-grom,гром,Жильный узел,shot,цепь,C,20,3,1.0,weapon_ranged,,40,,0,,,1,,"3 прыжка по 8 м, −25% за прыжок; у Искры вместо патрона +5 Яри",in_game
-storm_ward,Оберег грозы,C1-Yav,01-grom,гром,Козий вожак (опц.),spell,щит,C,35,18,40,flat,4,,,0,5,,0,,"щит 25% макс. HP; при пробитии разряд R 4 м",in_game
+﻿id;name_ru;chapter;biome;element;source;tag;rune_verb;rank;yar_cost;cooldown_s;damage;damage_basis;radius_m;range_m;arc_deg;delay_s;duration_s;stun_s;ammo_cost;iframes_s;notes;status
+thunder_strike;Громовой удар;C1-Yav;01-grom;гром;"Перун (старт; Сухоречье)";strike;площадь;D;20;4;1.8;weapon_melee;4;;120;0;;;0;;"Искра: круг 360° R 3 м от вспышки (15); Скелет: кулак 25; Плоть: колун +20%; Шок 30% — не сделан";in_game
+lightning_rod;Громоотвод;C1-Yav;01-grom;гром;Перун (Присяжный камень);spell;обездвиживание;D;30;10;45;flat;3;8;;1.5;;0.8;0;;"стержень в точку прицела; боссу — стак оглушения 30% (не сделано), иммунитет 15 с";in_game
+flare;Сполох;C1-Yav;01-grom;гром;Перун (Присяжный камень);spell;рывок;D;25;7;15;flat;;6;;0;;;0;0.25;рывок сквозь врагов, разряд по пути 60%;in_game
+chain_spark;Цепная искра;C1-Yav;01-grom;гром;Жильный узел;shot;цепь;C;20;3;1.0;weapon_ranged;;40;;0;;;1;;"3 прыжка по 8 м, −25% за прыжок; у Искры вместо патрона +5 Яри";in_game
+storm_ward;Оберег грозы;C1-Yav;01-grom;гром;Козий вожак (опц.);spell;щит;C;35;18;40;flat;4;;;0;5;;0;;"щит 25% макс. HP; при пробитии разряд R 4 м";in_game

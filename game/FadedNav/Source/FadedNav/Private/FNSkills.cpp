@@ -29,8 +29,8 @@ namespace
 		};
 	}
 
-	// Minimal CSV line split with quotes ("a, b" stays one cell).
-	TArray<FString> SplitCsv(const FString& Line)
+	// Minimal CSV line split with quotes ("a, b" stays one cell). Delimiter: ";" (Excel, Russian locale) or ",".
+	TArray<FString> SplitCsv(const FString& Line, TCHAR Delim)
 	{
 		TArray<FString> Out;
 		FString Cur;
@@ -39,7 +39,7 @@ namespace
 		{
 			const TCHAR C = Line[i];
 			if (C == '"') { if (bQuoted && i + 1 < Line.Len() && Line[i + 1] == '"') { Cur.AppendChar('"'); ++i; } else { bQuoted = !bQuoted; } }
-			else if (C == ',' && !bQuoted) { Out.Add(Cur); Cur.Reset(); }
+			else if (C == Delim && !bQuoted) { Out.Add(Cur); Cur.Reset(); }
 			else { Cur.AppendChar(C); }
 		}
 		Out.Add(Cur);
@@ -60,7 +60,8 @@ FString FNSkills::Reload()
 	{
 		TArray<FString> Lines;
 		if (!FFileHelper::LoadFileToStringArray(Lines, *Path) || Lines.Num() < 2) { continue; }
-		const TArray<FString> Head = SplitCsv(Lines[0]);
+		const TCHAR Delim = Lines[0].Contains(TEXT(";")) ? TEXT(';') : TEXT(',');
+		const TArray<FString> Head = SplitCsv(Lines[0], Delim);
 		auto Col = [&Head](const TCHAR* Name) { return Head.IndexOfByKey(FString(Name)); };
 		const int32 CId = Col(TEXT("id")), CName = Col(TEXT("name_ru")), CTag = Col(TEXT("tag")), CYar = Col(TEXT("yar_cost")), CCd = Col(TEXT("cooldown_s")),
 			CDmg = Col(TEXT("damage")), CR = Col(TEXT("radius_m")), CRange = Col(TEXT("range_m")), CArc = Col(TEXT("arc_deg")), CDelay = Col(TEXT("delay_s")),
@@ -68,11 +69,11 @@ FString FNSkills::Reload()
 		int32 Applied = 0;
 		for (int32 L = 1; L < Lines.Num(); ++L)
 		{
-			const TArray<FString> Row = SplitCsv(Lines[L]);
+			const TArray<FString> Row = SplitCsv(Lines[L], Delim);
 			if (!Row.IsValidIndex(CId)) { continue; }
 			FFNSkillDef* D = Defs.FindByPredicate([&](const FFNSkillDef& X) { return X.Id == Row[CId].TrimStartAndEnd(); });
 			if (!D) { continue; }
-			auto Num = [&Row](int32 C, float& Out, float Scale = 1.f) { if (Row.IsValidIndex(C) && !Row[C].TrimStartAndEnd().IsEmpty()) { Out = FCString::Atof(*Row[C]) * Scale; } };
+			auto Num = [&Row](int32 C, float& Out, float Scale = 1.f) { if (Row.IsValidIndex(C) && !Row[C].TrimStartAndEnd().IsEmpty()) { Out = FCString::Atof(*Row[C].Replace(TEXT(","), TEXT("."))) * Scale; } }; // "0,5" from a Russian Excel
 			if (Row.IsValidIndex(CName) && !Row[CName].IsEmpty()) { D->Name = Row[CName]; }
 			if (Row.IsValidIndex(CTag)) { const FString T = Row[CTag].TrimStartAndEnd(); D->Tag = T == TEXT("strike") ? EFNSkillTag::Strike : (T == TEXT("shot") ? EFNSkillTag::Shot : EFNSkillTag::Spell); }
 			Num(CYar, D->YarCost); Num(CCd, D->Cooldown); Num(CDmg, D->Damage); Num(CR, D->RadiusCm, 100.f); Num(CRange, D->RangeCm, 100.f);
