@@ -28,4 +28,10 @@
 | notes | особенности по стадиям и прочее | |
 | status | idea / draft / in_game | in_game |
 
-Все числа — допущения [Д] до плейтеста. Правило: меняем цифру — сначала здесь, потом в коде (`Source/FadedNav/Private/FNSkills.cpp`, `FNCharacter.cpp::CastSkill`).
+Все числа — допущения [Д] до плейтеста.
+
+**Синхронизация автоматическая:** игра при запуске сама читает `C1-Yav/skills.csv` (`Source/FadedNav/Private/FNSkills.cpp`). Меняешь цифру в таблице → перезапускаешь игру → навык работает по-новому, код не трогаем. В логе игры строка `Skills: N rows from …` показывает, что таблица прочитана. Если файла нет, игра берёт встроенные значения по умолчанию.
+- Какие колонки игра уже читает: name_ru, tag, yar_cost, cooldown_s, damage, radius_m, range_m, arc_deg, delay_s, duration_s, stun_s, ammo_cost, iframes_s, notes, rune_verb. Остальные (chapter, biome, source, rank, status) — пока для людей.
+- Новый камень (новая строка) требует кода его действия; цифры существующих — только таблица.
+- Для отдельной сборки игры таблицу нужно положить рядом: `game/FadedNav/Data/skills/C1-Yav/skills.csv` (сделаю при сборке билда).
+- Поддержки (`supports.csv`) игра пока не читает — их ещё нет в коде.

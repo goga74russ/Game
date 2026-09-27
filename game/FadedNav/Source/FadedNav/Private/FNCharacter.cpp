@@ -145,16 +145,16 @@ void AFNCharacter::BeginPlay()
 	{
 		// "Оберег грозы" breaks: a discharge around the hero.
 		TArray<FOverlapResult> Hits;
-		GetWorld()->OverlapMultiByObjectType(Hits, GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(400.f), FCollisionQueryParams(SCENE_QUERY_STAT(FNWard), false, this));
+		GetWorld()->OverlapMultiByObjectType(Hits, GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(FNSkills::Def(EFNSkillId::StormWard).RadiusCm), FCollisionQueryParams(SCENE_QUERY_STAT(FNWard), false, this));
 		TSet<AActor*> Done;
 		for (const FOverlapResult& O : Hits)
 		{
 			AActor* A = O.GetActor();
 			if (!A || A == this || Done.Contains(A)) { continue; }
 			Done.Add(A);
-			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>()) { YarFromHit(H, H->ApplyDamage(40.f, this), A); }
+			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>()) { YarFromHit(H, H->ApplyDamage(FNSkills::Def(EFNSkillId::StormWard).Damage, this), A); }
 		}
-		DrawDebugSphere(GetWorld(), GetActorLocation(), 400.f, 20, FColor(150, 170, 255), false, 0.3f);
+		DrawDebugSphere(GetWorld(), GetActorLocation(), FNSkills::Def(EFNSkillId::StormWard).RadiusCm, 20, FColor(150, 170, 255), false, 0.3f);
 		ShieldTime = 0.f;
 	};
 	SparkLight->SetLightColor(SparkColor);
@@ -502,7 +502,7 @@ void AFNCharacter::OnAbility(int32 Slot)
 	const FFNSkillDef& D = FNSkills::Def(static_cast<EFNSkillId>(Id));
 	const float Cost = D.YarCost + ((EFNSkillId)Id == EFNSkillId::ChainSpark && Stage == EFNStage::Spark ? 5.f : 0.f);
 	if (SkillCooldown[Id] > 0.f) { return; }
-	if (Yar < Cost) { ShowMessage(FString::Printf(TEXT("Мало Яри: %s — %.0f"), D.Name, Cost)); return; }
+	if (Yar < Cost) { ShowMessage(FString::Printf(TEXT("Мало Яри: %s — %.0f"), *D.Name, Cost)); return; }
 	if (CastSkill(Id))
 	{
 		Yar -= Cost;
@@ -1254,7 +1254,7 @@ void AFNCharacter::GiveSkill(int32 SkillId)
 	{
 		if (P < 0) { P = SkillId; break; } // demo: auto-equip in order of finding
 	}
-	ShowMessage(FString::Printf(TEXT("Камень-навык: %s"), FNSkills::Def(static_cast<EFNSkillId>(SkillId)).Name));
+	ShowMessage(FString::Printf(TEXT("Камень-навык: %s"), *FNSkills::Def(static_cast<EFNSkillId>(SkillId)).Name));
 }
 
 void AFNCharacter::YarFromHit(const UFNHealthComponent* Target, float Dealt, const AActor* Victim)
@@ -1310,44 +1310,47 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 	auto NoFilter = [](const FVector&) { return true; };
 	auto NoAfter = [](AActor*) {};
 
+	const FFNSkillDef& D = FNSkills::Def(static_cast<EFNSkillId>(SkillId)); // numbers from skills.csv
 	switch (static_cast<EFNSkillId>(SkillId))
 	{
 	case EFNSkillId::ThunderStrike:
 	{
 		// 180% of the melee weapon: Spark flash 15 (all around, 3 m), Skeleton fist 25, Flesh axe +20%.
 		const float Base = Stage == EFNStage::Spark ? 15.f : (Stage == EFNStage::Skeleton ? 25.f : (MeleeDamage + 5.f) * 1.2f);
-		const float R = Stage == EFNStage::Spark ? 300.f : 400.f;
+		const float R = Stage == EFNStage::Spark ? D.RadiusCm * 0.75f : D.RadiusCm; // Spark fights all around, a bit shorter
 		const FVector Fwd = GetActorForwardVector();
-		const bool bRing = Stage == EFNStage::Spark;
-		HitPawnsInSphere(Me, R, Base * 1.8f * (1.f + TreeMods.Melee), [&](const FVector& P) { return bRing || FVector::DotProduct((P - Me).GetSafeNormal2D(), Fwd) > 0.5f; }, NoAfter);
+		const bool bRing = Stage == EFNStage::Spark || D.ArcDeg >= 359.f;
+		const float MinDot = FMath::Cos(FMath::DegreesToRadians(D.ArcDeg * 0.5f));
+		HitPawnsInSphere(Me, R, Base * D.Damage * (1.f + TreeMods.Melee), [&](const FVector& P) { return bRing || FVector::DotProduct((P - Me).GetSafeNormal2D(), Fwd) >= MinDot; }, NoAfter);
 		DrawDebugCircle(W, Me - FVector(0, 0, 80.f), R, 32, FColor(150, 170, 255), false, 0.25f, 0, 6.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
 		return true;
 	}
 	case EFNSkillId::LightningRod:
 	{
 		// A rod in the aim point; 1.5 s later a bolt R 3 m with a 0.8 s stun (the exam's lightning in the hero's hands).
-		const FVector At = AimPoint(800.f);
-		DrawDebugCylinder(W, At, At + FVector(0, 0, 250.f), 8.f, 8, FColor(150, 170, 255), false, 1.5f, 0, 3.f);
-		DrawDebugCircle(W, At + FVector(0, 0, 5.f), 300.f, 32, FColor(150, 170, 255), false, 1.5f, 0, 3.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
+		const FVector At = AimPoint(D.RangeCm);
+		const float R = D.RadiusCm, Dmg = D.Damage, StunS = D.Stun;
+		DrawDebugCylinder(W, At, At + FVector(0, 0, 250.f), 8.f, 8, FColor(150, 170, 255), false, D.Delay, 0, 3.f);
+		DrawDebugCircle(W, At + FVector(0, 0, 5.f), R, 32, FColor(150, 170, 255), false, D.Delay, 0, 3.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
 		TWeakObjectPtr<AFNCharacter> Self(this);
 		FTimerHandle Handle;
-		W->GetTimerManager().SetTimer(Handle, [Self, At]()
+		W->GetTimerManager().SetTimer(Handle, [Self, At, R, Dmg, StunS]()
 		{
 			if (!Self.IsValid()) { return; }
 			AFNCharacter* H = Self.Get();
 			TArray<FOverlapResult> Hits;
-			H->GetWorld()->OverlapMultiByObjectType(Hits, At, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(300.f), FCollisionQueryParams(SCENE_QUERY_STAT(FNRod), false, H));
+			H->GetWorld()->OverlapMultiByObjectType(Hits, At, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(R), FCollisionQueryParams(SCENE_QUERY_STAT(FNRod), false, H));
 			TSet<AActor*> Done;
 			for (const FOverlapResult& O : Hits)
 			{
 				AActor* A = O.GetActor();
 				if (!A || A == H || Done.Contains(A)) { continue; }
 				Done.Add(A);
-				if (UFNHealthComponent* HC = A->FindComponentByClass<UFNHealthComponent>()) { H->YarFromHit(HC, HC->ApplyDamage(45.f, H), A); }
-				if (AFNMob* Mob = Cast<AFNMob>(A)) { Mob->Stun(0.8f); }
+				if (UFNHealthComponent* HC = A->FindComponentByClass<UFNHealthComponent>()) { H->YarFromHit(HC, HC->ApplyDamage(Dmg, H), A); }
+				if (AFNMob* Mob = Cast<AFNMob>(A)) { Mob->Stun(StunS); }
 			}
 			DrawDebugLine(H->GetWorld(), At + FVector(0, 0, 3000.f), At, FColor(170, 180, 255), false, 0.2f, 0, 40.f);
-		}, 1.5f, false);
+		}, FMath::Max(0.05f, D.Delay), false);
 		return true;
 	}
 	case EFNSkillId::Flare:
@@ -1356,14 +1359,14 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 		const FVector Dir = (LastMoveInput.IsNearlyZero() ? GetActorForwardVector() : LastMoveInput).GetSafeNormal2D();
 		FHitResult Hit;
 		FCollisionQueryParams Q(SCENE_QUERY_STAT(FNFlare), false, this);
-		const FVector To = Me + Dir * 600.f;
+		const FVector To = Me + Dir * D.RangeCm;
 		const bool bWall = W->SweepSingleByChannel(Hit, Me, To, FQuat::Identity, ECC_WorldStatic, FCollisionShape::MakeSphere(35.f), Q);
 		const FVector End = bWall ? Hit.Location : To;
 		const FVector Mid = (Me + End) * 0.5f;
-		HitPawnsInSphere(Mid, FVector::Dist(Me, End) * 0.5f + 100.f, 15.f, NoFilter, NoAfter);
+		HitPawnsInSphere(Mid, FVector::Dist(Me, End) * 0.5f + 100.f, D.Damage, NoFilter, NoAfter);
 		SetActorLocation(End, false, nullptr, ETeleportType::TeleportPhysics);
 		DrawDebugLine(W, Me, End, FColor(150, 170, 255), false, 0.25f, 0, 8.f);
-		IFramesRemaining = FMath::Max(IFramesRemaining, 0.25f);
+		IFramesRemaining = FMath::Max(IFramesRemaining, D.IFrames);
 		Health->bInvulnerable = true;
 		DodgeStartTime = W->GetTimeSeconds();
 		return true;
@@ -1374,15 +1377,15 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 		if (Stage != EFNStage::Spark)
 		{
 			int32& Mag = Weapon == EFNWeapon::Scatter ? ScatterAmmo : Ammo;
-			if (!HasRangedWeapon() || Mag <= 0) { ShowMessage(TEXT("Нет патрона для Цепной искры")); return false; }
-			--Mag;
+			if (!HasRangedWeapon() || Mag < D.AmmoCost) { ShowMessage(TEXT("Нет патрона для Цепной искры")); return false; }
+			Mag -= D.AmmoCost;
 		}
 		FHitResult Hit;
 		const FVector From = Camera->GetComponentLocation();
 		FCollisionQueryParams Q(SCENE_QUERY_STAT(FNChain), false, this);
-		AActor* Cur = W->LineTraceSingleByChannel(Hit, From, From + Camera->GetForwardVector() * 4000.f, ECC_Visibility, Q) ? Hit.GetActor() : nullptr;
+		AActor* Cur = W->LineTraceSingleByChannel(Hit, From, From + Camera->GetForwardVector() * D.RangeCm, ECC_Visibility, Q) ? Hit.GetActor() : nullptr;
 		FVector Prev = Me;
-		float Damage = ShotDamage * TreeMods.Ranged;
+		float Damage = ShotDamage * D.Damage * TreeMods.Ranged;
 		TSet<AActor*> Done;
 		for (int32 Jump = 0; Jump < 4 && Cur; ++Jump)
 		{
@@ -1398,8 +1401,8 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 			float Best = 800.f;
 			for (TActorIterator<AFNMob> It(W); It; ++It)
 			{
-				const float D = FVector::Dist(It->GetActorLocation(), Prev);
-				if (!Done.Contains(*It) && !It->IsDead() && D < Best) { Best = D; Next = *It; }
+				const float Dist = FVector::Dist(It->GetActorLocation(), Prev);
+				if (!Done.Contains(*It) && !It->IsDead() && Dist < Best) { Best = Dist; Next = *It; }
 			}
 			Cur = Next;
 		}
@@ -1408,8 +1411,8 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 	}
 	case EFNSkillId::StormWard:
 		// Shield of 25% max HP for 5 s; the break discharge lives in Health->OnShieldBroken.
-		Health->Shield = Health->MaxHealth * 0.25f;
-		ShieldTime = 5.f;
+		Health->Shield = Health->MaxHealth * 0.25f; // shield share: see notes in skills.csv
+		ShieldTime = D.Duration;
 		return true;
 	default:
 		return false;
