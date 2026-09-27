@@ -1,0 +1,4 @@
+id,name_ru,chapter,biome,source,type,more_mult,damage_mod,yar_cost_mod,effect,compatible_tags,limit,status
+raskat,Раскат,C1-Yav,01-grom,Жильный узел,mechanic,,0.5,,повтор навыка через 0.6 с на 50% силы в той же точке,strike|spell,,draft
+zazemlenie,Заземление,C1-Yav,01-grom,Козий вожак,mechanic,,-0.3,,каждый поражённый враг возвращает 4 Яри,all,не больше 20 Яри за применение; не больше 75% цены,draft
+suhaya_groza,Сухая гроза,C1-Yav,01-grom,тайник рва / вожак,more,1.25,,0.2,+25% More урона,all,единственная More в демо,draft
