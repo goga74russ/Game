@@ -183,6 +183,17 @@ void AFNGameMode::SpawnChapterItems()
 		{ 514.f, 62.f, EFNPickupType::Armor },
 		{ 517.f, 66.f, EFNPickupType::Armor },
 	};
+	struct FGem { float X; float Y; int32 Skill; };
+	const FGem Gems[] = { { 6.f, 6.f, 0 }, { 162.f, 44.f, 1 }, { 155.f, 44.f, 2 } };
+	for (const FGem& G : Gems)
+	{
+		const FTransform At(Ground(G.X, G.Y) + FVector(0.f, 0.f, 90.f));
+		if (AFNPickup* P = World->SpawnActorDeferred<AFNPickup>(AFNPickup::StaticClass(), At, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn))
+		{
+			P->InitSkill(G.Skill);
+			P->FinishSpawning(At);
+		}
+	}
 	for (const FItem& It : Items)
 	{
 		if (AFNPickup* P = World->SpawnActorDeferred<AFNPickup>(AFNPickup::StaticClass(), FTransform(Ground(It.X, It.Y) + FVector(0.f, 0.f, 90.f)), nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn))

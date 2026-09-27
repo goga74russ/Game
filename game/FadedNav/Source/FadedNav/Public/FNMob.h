@@ -38,6 +38,8 @@ public:
 
 	EFNMobType GetMobType() const { return Type; }
 	bool IsDead() const { return State == EFNMobState::Dead; }
+	// Stun (skill "Громоотвод"): stops the mob for a moment.
+	void Stun(float Duration) { if (State != EFNMobState::Dead && State != EFNMobState::Burrowed) { EnterState(EFNMobState::Recover, Duration); } }
 	// Flinch (tree notable "Раскат"): a winding-up attack is interrupted.
 	void Flinch() { if (State == EFNMobState::Windup && Type != EFNMobType::Ryhlets) { EnterState(EFNMobState::Recover, 0.6f); } }
 

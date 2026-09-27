@@ -14,6 +14,8 @@
 #include "FNGameMode.h"
 #include "FNMob.h"
 #include "FNRite.h"
+#include "FNSkills.h"
+#include "TimerManager.h"
 #include "Misc/App.h"
 #include "FNPerunBoss.h"
 #include "FNSkillTree.h"
@@ -139,6 +141,22 @@ void AFNCharacter::BeginPlay()
 	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), SparkColor); }
 	InitRetarget();
 	Health->OnAvoided = [this]() { OnAttackAvoided(); };
+	Health->OnShieldBroken = [this]()
+	{
+		// "Оберег грозы" breaks: a discharge around the hero.
+		TArray<FOverlapResult> Hits;
+		GetWorld()->OverlapMultiByObjectType(Hits, GetActorLocation(), FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(400.f), FCollisionQueryParams(SCENE_QUERY_STAT(FNWard), false, this));
+		TSet<AActor*> Done;
+		for (const FOverlapResult& O : Hits)
+		{
+			AActor* A = O.GetActor();
+			if (!A || A == this || Done.Contains(A)) { continue; }
+			Done.Add(A);
+			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>()) { YarFromHit(H, H->ApplyDamage(40.f, this), A); }
+		}
+		DrawDebugSphere(GetWorld(), GetActorLocation(), 400.f, 20, FColor(150, 170, 255), false, 0.3f);
+		ShieldTime = 0.f;
+	};
 	SparkLight->SetLightColor(SparkColor);
 
 	// The chapter starts as a Spark; the flat boss arena (?Arena) starts as full Flesh with the rifle.
@@ -377,7 +395,9 @@ void AFNCharacter::FireShot()
 	switch (Weapon)
 	{
 	case EFNWeapon::Plasma:
-		// Weak energy bolt, no ammo (Spark/Skeleton before the first weapon).
+		// Weak energy bolt, no ammo; costs 3 Yar (skills_demo §2).
+		if (Yar < 3.f) { ShowMessage(TEXT("Нет Яри на выстрел — бей вспышкой")); FireCooldown = 0.5f; return; }
+		Yar -= 3.f;
 		FireCooldown = 0.28f / TreeMods.FireRate;
 		FireTrace(10.f, 1.5f, 3000.f, FColor(90, 230, 255));
 		return;
@@ -445,7 +465,7 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 			const bool bWeak = Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(TEXT("WeakPoint"));
 			if (const float Dealt = TargetHealth->ApplyDamage(Damage * TreeMods.Ranged * (bWeak ? WeakPointMultiplier * (1.f + TreeMods.Weak) : 1.f), this); Dealt > 0.f)
 			{
-				AddYar(Dealt * YarPerDamage);
+				YarFromHit(TargetHealth, Dealt, Hit.GetActor());
 				LastHitTime = GetWorld()->GetTimeSeconds();
 				bLastHitWeak = bWeak;
 				// "Раскат": a weak-point shot makes the creature flinch.
@@ -475,10 +495,19 @@ void AFNCharacter::CycleWeapon(int32 Dir)
 
 void AFNCharacter::OnAbility(int32 Slot)
 {
-	// Skill gems are not in the demo yet: the slots show the future layout.
-	ShowMessage(IsAbilitySlotOpen(Slot)
-		? FString::Printf(TEXT("Слот %d пуст — камень-навык ещё не найден"), Slot + 1)
-		: FString(TEXT("Слот 4 — ульта. Откроется в Нави")));
+	if (bDead || bTreeOpen) { return; }
+	if (!IsAbilitySlotOpen(Slot)) { ShowMessage(TEXT("Слот 4 — ульта. Откроется в Нави")); return; }
+	const int32 Id = Panel[Slot];
+	if (Id < 0) { ShowMessage(FString::Printf(TEXT("Слот %d пуст — камень-навык ещё не найден"), Slot + 1)); return; }
+	const FFNSkillDef& D = FNSkills::Def(static_cast<EFNSkillId>(Id));
+	const float Cost = D.YarCost + ((EFNSkillId)Id == EFNSkillId::ChainSpark && Stage == EFNStage::Spark ? 5.f : 0.f);
+	if (SkillCooldown[Id] > 0.f) { return; }
+	if (Yar < Cost) { ShowMessage(FString::Printf(TEXT("Мало Яри: %s — %.0f"), D.Name, Cost)); return; }
+	if (CastSkill(Id))
+	{
+		Yar -= Cost;
+		SkillCooldown[Id] = D.Cooldown;
+	}
 }
 
 void AFNCharacter::SelectWeapon(EFNWeapon W)
@@ -751,7 +780,7 @@ void AFNCharacter::OnMelee()
 			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>())
 			{
 				const float Dealt = H->ApplyDamage(Damage * (1.f + TreeMods.Melee), this);
-				AddYar(Dealt * YarPerDamage);
+				YarFromHit(H, Dealt, A);
 				if (Dealt > 0.f && TreeMods.MeleeHeal > 0.f)
 				{
 					Health->Health = FMath::Min(Health->MaxHealth, Health->Health + TreeMods.MeleeHeal);
@@ -810,12 +839,61 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	UpdateRetarget();
 	UpdateFocus();
-	AddYar(YarRegen * DeltaSeconds);
+	{
+		// Dry regen: out of ammo and low on Yar -> faster (skills_demo §2).
+		const bool bDry = HasRangedWeapon() && Stage != EFNStage::Spark && Ammo + ScatterAmmo + Reserve <= 0;
+		AddYar((bDry && Yar < 20.f ? 3.f : YarRegen) * DeltaSeconds);
+		for (float& C : SkillCooldown) { C = FMath::Max(0.f, C - DeltaSeconds); }
+		if (ShieldTime > 0.f) { ShieldTime -= DeltaSeconds; if (ShieldTime <= 0.f) { Health->Shield = 0.f; } }
+	}
 	if (PerfectSlowMo > 0.f)
 	{
 		PerfectSlowMo -= FApp::GetDeltaTime(); // real time
 		if (PerfectSlowMo <= 0.f && !bTreeOpen) { UGameplayStatics::SetGlobalTimeDilation(this, 1.f); }
 	}
+	// Test key "-SkillTest": Flesh with a rifle among the Strelokopni mobs casts all five gems, screenshots each.
+	if (FParse::Param(FCommandLine::Get(), TEXT("SkillTest")))
+	{
+		static int32 KStep = 0;
+		const float T = GetWorld()->GetTimeSeconds();
+		APlayerController* PC = Cast<APlayerController>(GetController());
+		auto Shot = [](const TCHAR* Name) { FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString(Name) + TEXT(".png"), false, false); };
+		static const float At[] = { 8.f, 9.f, 9.3f, 11.f, 11.4f, 13.2f, 14.f, 14.3f, 15.5f, 15.8f, 17.f, 17.3f, 18.5f };
+		if (KStep < UE_ARRAY_COUNT(At) && T > At[KStep])
+		{
+			switch (KStep)
+			{
+			case 0:
+			{
+				SetStage(EFNStage::Flesh, false);
+				GiveWeapon(EFNWeapon::Rifle);
+				for (int32 k = 0; k < 3; ++k) { GiveSkill(k); }
+				FHitResult Hit;
+				const FVector From(285.f * 100.f, -40.f * 100.f, 0.f);
+				GetWorld()->LineTraceSingleByChannel(Hit, From + FVector(0, 0, 50000.f), From - FVector(0, 0, 10000.f), ECC_WorldStatic);
+				SetActorLocation(Hit.ImpactPoint + FVector(0.f, 0.f, 100.f), false, nullptr, ETeleportType::TeleportPhysics);
+				LastSafeLocation = GetActorLocation();
+				if (PC) { PC->SetControlRotation(FRotator(-12.f, 0.f, 0.f)); }
+				Yar = MaxYar;
+				break;
+			}
+			case 1: Shot(TEXT("40_panel")); break;
+			case 2: OnAbility(0); break;                       // Громовой удар
+			case 3: Shot(TEXT("41_strike_after")); Yar = MaxYar; OnAbility(1); break; // Громоотвод
+			case 4: Shot(TEXT("42_rod_telegraph")); break;
+			case 5: Shot(TEXT("43_rod_bolt")); Yar = MaxYar; break;
+			case 6: OnAbility(2); break;                       // Сполох
+			case 7: Shot(TEXT("44_flare")); break;
+			case 8: Panel[0] = 3; Panel[1] = 4; Yar = MaxYar; OnAbility(0); break; // Цепная искра
+			case 9: Shot(TEXT("45_chain")); break;
+			case 10: Yar = MaxYar; OnAbility(1); break;        // Оберег грозы
+			case 11: Shot(TEXT("46_ward")); break;
+			case 12: if (PC) { PC->ConsoleCommand(TEXT("quit")); } break;
+			}
+			++KStep;
+		}
+	}
+
 	// Test key "-RiteTest": walks the two rite chains as Flesh and screenshots each step (UI review).
 	if (FParse::Param(FCommandLine::Get(), TEXT("RiteTest")))
 	{
@@ -1142,9 +1220,198 @@ void AFNCharacter::OnAttackAvoided()
 		return;
 	}
 	LastPerfectDodge = Now;
-	AddYar(PerfectDodgeYar);
+	bool bBigFoe = false;
+	for (TActorIterator<AFNPerunBoss> It(GetWorld()); It; ++It) { bBigFoe = It->IsFightActive() && FVector::Dist(It->GetActorLocation(), GetActorLocation()) < 2500.f; }
+	AddYar(bBigFoe ? 25.f : 15.f);
 	// A beat of slow motion so the player feels it.
 	UGameplayStatics::SetGlobalTimeDilation(this, 0.3f);
 	PerfectSlowMo = 0.15f;
 	SparkLight->SetIntensity(SparkLight->Intensity + 20000.f);
+}
+
+float AFNCharacter::GetSkillCooldownRatio(int32 Slot) const
+{
+	const int32 Id = GetPanelSkill(Slot);
+	return Id < 0 ? 0.f : SkillCooldown[Id] / FMath::Max(0.1f, FNSkills::Def(static_cast<EFNSkillId>(Id)).Cooldown);
+}
+
+bool AFNCharacter::CanAffordSkill(int32 Slot) const
+{
+	const int32 Id = GetPanelSkill(Slot);
+	return Id >= 0 && Yar >= FNSkills::Def(static_cast<EFNSkillId>(Id)).YarCost;
+}
+
+float AFNCharacter::GetShield() const
+{
+	return Health->Shield;
+}
+
+void AFNCharacter::GiveSkill(int32 SkillId)
+{
+	if (OwnedSkills.Contains(SkillId)) { return; }
+	OwnedSkills.Add(SkillId);
+	for (int32& P : Panel)
+	{
+		if (P < 0) { P = SkillId; break; } // demo: auto-equip in order of finding
+	}
+	ShowMessage(FString::Printf(TEXT("Камень-навык: %s"), FNSkills::Def(static_cast<EFNSkillId>(SkillId)).Name));
+}
+
+void AFNCharacter::YarFromHit(const UFNHealthComponent* Target, float Dealt, const AActor* Victim)
+{
+	if (!Target || Dealt <= 0.f) { return; }
+	// 1 Yar per 5% HP of a normal mob (~20 per kill); bosses 1 per 1% HP, at most 8/s (skills_demo §2).
+	if (Cast<AFNPerunBoss>(Victim))
+	{
+		const double Now = GetWorld()->GetTimeSeconds();
+		if (Now - YarBossWindowStart > 1.0) { YarBossWindowStart = Now; YarBossWindow = 0.f; }
+		const float Gain = FMath::Min(100.f * Dealt / FMath::Max(1.f, Target->MaxHealth), 8.f - YarBossWindow);
+		if (Gain > 0.f) { YarBossWindow += Gain; AddYar(Gain); }
+		return;
+	}
+	AddYar(20.f * Dealt / FMath::Max(1.f, Target->MaxHealth));
+}
+
+FVector AFNCharacter::AimPoint(float MaxRange) const
+{
+	const FVector From = Camera->GetComponentLocation();
+	const FVector To = From + Camera->GetForwardVector() * (MaxRange + 600.f);
+	FHitResult Hit;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(FNAimPoint), false, this);
+	FVector P = GetWorld()->LineTraceSingleByChannel(Hit, From, To, ECC_Visibility, Q) ? Hit.ImpactPoint : To;
+	const FVector Me = GetActorLocation();
+	if (FVector::Dist2D(P, Me) > MaxRange) { P = Me + (P - Me).GetSafeNormal2D() * MaxRange; }
+	// Drop onto the ground.
+	if (GetWorld()->LineTraceSingleByChannel(Hit, P + FVector(0, 0, 1500.f), P - FVector(0, 0, 3000.f), ECC_WorldStatic, Q)) { P = Hit.ImpactPoint; }
+	return P;
+}
+
+bool AFNCharacter::CastSkill(int32 SkillId)
+{
+	UWorld* W = GetWorld();
+	const FVector Me = GetActorLocation();
+	auto HitPawnsInSphere = [this, W](const FVector& C, float R, float Damage, TFunctionRef<bool(const FVector&)> Filter, TFunctionRef<void(AActor*)> After)
+	{
+		TArray<FOverlapResult> Hits;
+		W->OverlapMultiByObjectType(Hits, C, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(R), FCollisionQueryParams(SCENE_QUERY_STAT(FNSkill), false, this));
+		TSet<AActor*> Done;
+		for (const FOverlapResult& O : Hits)
+		{
+			AActor* A = O.GetActor();
+			if (!A || A == this || Done.Contains(A) || !Filter(A->GetActorLocation())) { continue; }
+			Done.Add(A);
+			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>())
+			{
+				YarFromHit(H, H->ApplyDamage(Damage, this), A);
+				After(A);
+			}
+		}
+	};
+	auto NoFilter = [](const FVector&) { return true; };
+	auto NoAfter = [](AActor*) {};
+
+	switch (static_cast<EFNSkillId>(SkillId))
+	{
+	case EFNSkillId::ThunderStrike:
+	{
+		// 180% of the melee weapon: Spark flash 15 (all around, 3 m), Skeleton fist 25, Flesh axe +20%.
+		const float Base = Stage == EFNStage::Spark ? 15.f : (Stage == EFNStage::Skeleton ? 25.f : (MeleeDamage + 5.f) * 1.2f);
+		const float R = Stage == EFNStage::Spark ? 300.f : 400.f;
+		const FVector Fwd = GetActorForwardVector();
+		const bool bRing = Stage == EFNStage::Spark;
+		HitPawnsInSphere(Me, R, Base * 1.8f * (1.f + TreeMods.Melee), [&](const FVector& P) { return bRing || FVector::DotProduct((P - Me).GetSafeNormal2D(), Fwd) > 0.5f; }, NoAfter);
+		DrawDebugCircle(W, Me - FVector(0, 0, 80.f), R, 32, FColor(150, 170, 255), false, 0.25f, 0, 6.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
+		return true;
+	}
+	case EFNSkillId::LightningRod:
+	{
+		// A rod in the aim point; 1.5 s later a bolt R 3 m with a 0.8 s stun (the exam's lightning in the hero's hands).
+		const FVector At = AimPoint(800.f);
+		DrawDebugCylinder(W, At, At + FVector(0, 0, 250.f), 8.f, 8, FColor(150, 170, 255), false, 1.5f, 0, 3.f);
+		DrawDebugCircle(W, At + FVector(0, 0, 5.f), 300.f, 32, FColor(150, 170, 255), false, 1.5f, 0, 3.f, FVector(1, 0, 0), FVector(0, 1, 0), false);
+		TWeakObjectPtr<AFNCharacter> Self(this);
+		FTimerHandle Handle;
+		W->GetTimerManager().SetTimer(Handle, [Self, At]()
+		{
+			if (!Self.IsValid()) { return; }
+			AFNCharacter* H = Self.Get();
+			TArray<FOverlapResult> Hits;
+			H->GetWorld()->OverlapMultiByObjectType(Hits, At, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(300.f), FCollisionQueryParams(SCENE_QUERY_STAT(FNRod), false, H));
+			TSet<AActor*> Done;
+			for (const FOverlapResult& O : Hits)
+			{
+				AActor* A = O.GetActor();
+				if (!A || A == H || Done.Contains(A)) { continue; }
+				Done.Add(A);
+				if (UFNHealthComponent* HC = A->FindComponentByClass<UFNHealthComponent>()) { H->YarFromHit(HC, HC->ApplyDamage(45.f, H), A); }
+				if (AFNMob* Mob = Cast<AFNMob>(A)) { Mob->Stun(0.8f); }
+			}
+			DrawDebugLine(H->GetWorld(), At + FVector(0, 0, 3000.f), At, FColor(170, 180, 255), false, 0.2f, 0, 40.f);
+		}, 1.5f, false);
+		return true;
+	}
+	case EFNSkillId::Flare:
+	{
+		// Dash 6 m through enemies, i-frames 0.25 s, a discharge along the way (60%).
+		const FVector Dir = (LastMoveInput.IsNearlyZero() ? GetActorForwardVector() : LastMoveInput).GetSafeNormal2D();
+		FHitResult Hit;
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(FNFlare), false, this);
+		const FVector To = Me + Dir * 600.f;
+		const bool bWall = W->SweepSingleByChannel(Hit, Me, To, FQuat::Identity, ECC_WorldStatic, FCollisionShape::MakeSphere(35.f), Q);
+		const FVector End = bWall ? Hit.Location : To;
+		const FVector Mid = (Me + End) * 0.5f;
+		HitPawnsInSphere(Mid, FVector::Dist(Me, End) * 0.5f + 100.f, 15.f, NoFilter, NoAfter);
+		SetActorLocation(End, false, nullptr, ETeleportType::TeleportPhysics);
+		DrawDebugLine(W, Me, End, FColor(150, 170, 255), false, 0.25f, 0, 8.f);
+		IFramesRemaining = FMath::Max(IFramesRemaining, 0.25f);
+		Health->bInvulnerable = true;
+		DodgeStartTime = W->GetTimeSeconds();
+		return true;
+	}
+	case EFNSkillId::ChainSpark:
+	{
+		// A shot that jumps to 3 targets (-25% per jump); 1 bullet (Spark pays +5 Yar instead).
+		if (Stage != EFNStage::Spark)
+		{
+			int32& Mag = Weapon == EFNWeapon::Scatter ? ScatterAmmo : Ammo;
+			if (!HasRangedWeapon() || Mag <= 0) { ShowMessage(TEXT("Нет патрона для Цепной искры")); return false; }
+			--Mag;
+		}
+		FHitResult Hit;
+		const FVector From = Camera->GetComponentLocation();
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(FNChain), false, this);
+		AActor* Cur = W->LineTraceSingleByChannel(Hit, From, From + Camera->GetForwardVector() * 4000.f, ECC_Visibility, Q) ? Hit.GetActor() : nullptr;
+		FVector Prev = Me;
+		float Damage = ShotDamage * TreeMods.Ranged;
+		TSet<AActor*> Done;
+		for (int32 Jump = 0; Jump < 4 && Cur; ++Jump)
+		{
+			UFNHealthComponent* H = Cur->FindComponentByClass<UFNHealthComponent>();
+			if (!H || Done.Contains(Cur)) { break; }
+			Done.Add(Cur);
+			YarFromHit(H, H->ApplyDamage(Damage, this), Cur);
+			DrawDebugLine(W, Prev, Cur->GetActorLocation(), FColor(150, 170, 255), false, 0.2f, 0, 4.f);
+			Prev = Cur->GetActorLocation();
+			Damage *= 0.75f;
+			// Next: nearest other mob within 8 m.
+			AActor* Next = nullptr;
+			float Best = 800.f;
+			for (TActorIterator<AFNMob> It(W); It; ++It)
+			{
+				const float D = FVector::Dist(It->GetActorLocation(), Prev);
+				if (!Done.Contains(*It) && !It->IsDead() && D < Best) { Best = D; Next = *It; }
+			}
+			Cur = Next;
+		}
+		if (Done.Num() == 0) { DrawDebugLine(W, Me, From + Camera->GetForwardVector() * 1500.f, FColor(150, 170, 255), false, 0.15f, 0, 3.f); }
+		return true;
+	}
+	case EFNSkillId::StormWard:
+		// Shield of 25% max HP for 5 s; the break discharge lives in Health->OnShieldBroken.
+		Health->Shield = Health->MaxHealth * 0.25f;
+		ShieldTime = 5.f;
+		return true;
+	default:
+		return false;
+	}
 }

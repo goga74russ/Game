@@ -64,6 +64,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Yar") float PerfectDodgeCooldown = 1.5f;
 	// Ability slots 1-4 (GDD §4: Yav — 3 skill-gem slots; slot 4 = ultimate, opens in Nav). Empty in the demo for now.
 	bool IsAbilitySlotOpen(int32 Slot) const { return Slot < 3; }
+	// Skill panel 1-3 (GDD §4): gems equipped in order of finding. -1 = empty.
+	int32 GetPanelSkill(int32 Slot) const { return Slot >= 0 && Slot < 3 ? Panel[Slot] : -1; }
+	float GetSkillCooldownRatio(int32 Slot) const;
+	bool CanAffordSkill(int32 Slot) const;
+	void GiveSkill(int32 SkillId);
+	bool HasSkill(int32 SkillId) const { return OwnedSkills.Contains(SkillId); }
+	float GetShield() const;
 	int32 GetKills() const;
 	void GiveWeapon(EFNWeapon NewWeapon);
 	void GiveArmor(float Bonus);
@@ -177,6 +184,15 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
 private:
+	bool CastSkill(int32 SkillId);
+	void YarFromHit(const class UFNHealthComponent* Target, float Dealt, const AActor* Victim);
+	FVector AimPoint(float MaxRange) const;
+	TArray<int32> OwnedSkills;
+	int32 Panel[3] = { -1, -1, -1 };
+	float SkillCooldown[8] = {};
+	float ShieldTime = 0.f;
+	double YarBossWindowStart = -100.0;
+	float YarBossWindow = 0.f;
 	void OnAttackAvoided();
 	float Yar = 0.f;
 	double DodgeStartTime = -100.0;

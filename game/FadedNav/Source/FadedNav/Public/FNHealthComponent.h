@@ -29,6 +29,10 @@ public:
 	// Called when an attack that would have hit was avoided by invulnerability (perfect-dodge hook).
 	TFunction<void()> OnAvoided;
 
+	// Temporary shield (skill "Оберег грозы"): absorbs damage first.
+	float Shield = 0.f;
+	TFunction<void()> OnShieldBroken;
+
 	// Damage taken multiplier from passives (Increased/More, GDD §6).
 	float IncomingMultiplier = 1.f;
 

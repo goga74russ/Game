@@ -12,6 +12,7 @@
 #include "FNMob.h"
 #include "FNPerunBoss.h"
 #include "FNRite.h"
+#include "FNSkills.h"
 #include "FNSkillTree.h"
 #include "RenderUtils.h"
 #include "TextureResource.h"
@@ -671,6 +672,29 @@ void AFNHUD::DrawHUD()
 				FillBevel(SX, SY, Slot, Slot, 8.f, Fill);
 				LineBevel(SX, SY, Slot, Slot, 8.f, bOpen ? Line : Hex(TEXT("b8955a"), 0.25f), 1.f);
 				Txt(FString::FromInt(i + 1), SX + 5.f, SY + 1.f, Font(1, 13.f), BoneDim);
+				if (bOpen && Player->GetPanelSkill(i) >= 0)
+				{
+					// Gem: rune frame by tag (square = strike, diamond = shot, circle = spell) in the thunder colour,
+					// short name, Yar cost; dark sweep while on cooldown, dimmed when Yar is short.
+					const FFNSkillDef& D = FNSkills::Def(static_cast<EFNSkillId>(Player->GetPanelSkill(i)));
+					const bool bAfford = Player->CanAffordSkill(i);
+					FLinearColor RC = Player->GetSparkColor(); RC.A = bAfford ? 1.f : 0.35f;
+					const float CX = SX + Slot * 0.5f, CY = SY + Slot * 0.5f - 3.f, RR = 11.f;
+					if (D.Tag == EFNSkillTag::Strike) { LineBevel(CX - RR, CY - RR, 2.f * RR, 2.f * RR, 0.f, RC, 1.5f); }
+					else if (D.Tag == EFNSkillTag::Shot)
+					{
+						const FVector2D P4[] = { { CX, CY - RR - 2.f }, { CX + RR + 2.f, CY }, { CX, CY + RR + 2.f }, { CX - RR - 2.f, CY } };
+						for (int32 k = 0; k < 4; ++k) { DrawLine(P4[k].X * S, P4[k].Y * S, P4[(k + 1) % 4].X * S, P4[(k + 1) % 4].Y * S, RC, 1.5f * S); }
+					}
+					else { DrawRing(CX, CY, RR, RC, 1.5f); }
+					// Bolt glyph (all demo gems are thunder).
+					const FVector2D Bolt[] = { { CX + 2.f, CY - 7.f }, { CX - 3.f, CY + 1.f }, { CX + 1.f, CY + 1.f }, { CX - 2.f, CY + 7.f } };
+					for (int32 k = 0; k < 3; ++k) { DrawLine(Bolt[k].X * S, Bolt[k].Y * S, Bolt[k + 1].X * S, Bolt[k + 1].Y * S, RC, 1.3f * S); }
+					Txt(D.Short, CX, SY + Slot - 15.f, Font(2, 11.f), bAfford ? Bone : BoneDim, EAlign::Center);
+					Txt(FString::Printf(TEXT("%.0f"), D.YarCost), SX + Slot - 4.f, SY + 1.f, Font(2, 11.f), Hex(TEXT("c8642a")), EAlign::Right);
+					const float CD = Player->GetSkillCooldownRatio(i);
+					if (CD > 0.f) { DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), (SX + 1.f) * S, (SY + 1.f + (Slot - 2.f) * (1.f - CD)) * S, (Slot - 2.f) * S, (Slot - 2.f) * CD * S); }
+				}
 				if (!bOpen)
 				{
 					// Slot 4: the ultimate, sealed until Nav — a small padlock.

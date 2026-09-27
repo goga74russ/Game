@@ -22,7 +22,16 @@ float UFNHealthComponent::ApplyDamage(float Amount, AActor* Instigator)
 		return 0.f;
 	}
 
-	const float Applied = FMath::Min(Amount * IncomingMultiplier, Health);
+	float Incoming = Amount * IncomingMultiplier;
+	if (Shield > 0.f)
+	{
+		const float Absorbed = FMath::Min(Shield, Incoming);
+		Shield -= Absorbed;
+		Incoming -= Absorbed;
+		if (Shield <= 0.f && OnShieldBroken) { OnShieldBroken(); }
+		if (Incoming <= 0.f) { return 0.f; }
+	}
+	const float Applied = FMath::Min(Incoming, Health);
 	Health -= Applied;
 	if (IsDead())
 	{

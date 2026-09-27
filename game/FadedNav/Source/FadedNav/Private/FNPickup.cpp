@@ -40,6 +40,7 @@ void AFNPickup::BeginPlay()
 	case EFNPickupType::Scatter: Item->SetWorldScale3D(FVector(0.7f, 0.25f, 0.25f)); break;
 	case EFNPickupType::Armor:   Item->SetWorldScale3D(FVector(0.5f, 0.1f, 0.6f)); break;
 	case EFNPickupType::Rune:    Item->SetWorldScale3D(FVector(0.3f)); Item->SetRelativeRotation(FRotator(45.f, 0.f, 45.f)); break;
+	case EFNPickupType::Skill:   Item->SetWorldScale3D(FVector(0.35f, 0.35f, 0.5f)); break;
 	}
 
 	const FLinearColor Wax(1.f, 0.72f, 0.25f);
@@ -67,6 +68,7 @@ void AFNPickup::Tick(float DeltaSeconds)
 		case EFNPickupType::Scatter: P->GiveWeapon(EFNWeapon::Scatter); break;
 		case EFNPickupType::Armor:   P->GiveArmor(25.f); break;
 		case EFNPickupType::Rune:    P->FindRune(RuneNode); break;
+		case EFNPickupType::Skill:   P->GiveSkill(RuneNode); break;
 		}
 		Destroy();
 		return;
