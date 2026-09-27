@@ -74,6 +74,28 @@ public:
 	void GiveTrace();              // cosmetic trace for the rare exam win (no power)
 	void Flinch() { FlinchRemaining = 0.45f; } // startles at thunder
 	void FindRune(int32 Node);
+
+	// Satchel for rite items (secrets_v0.1: 6 slots [D], no weight, kept on death).
+	bool HasItem(FName Item) const { return Satchel.Contains(Item); }
+	bool IsSatchelFull() const { return Satchel.Num() >= SatchelSize; }
+	void AddItem(FName Item) { if (!IsSatchelFull()) { Satchel.Add(Item); } }
+	void RemoveItem(FName Item) { Satchel.RemoveSingle(Item); }
+	const TArray<FName>& GetSatchel() const { return Satchel; }
+	static constexpr int32 SatchelSize = 6;
+
+	// NPC speech shown as a subtitle (speaker + line).
+	void ShowSubtitle(const FString& Speaker, const FString& Text);
+	bool HasSubtitle() const;
+	const FString& GetSubSpeaker() const { return SubSpeaker; }
+	const FString& GetSubText() const { return SubText; }
+
+	// Rite reward: horse-skull helmet (cosmetic).
+	void GiveHelmet();
+	bool HasHelmet() const { return bHelmet; }
+
+	// Interaction (E): nearest rite object in front of the hero.
+	class AFNRiteObject* GetFocus() const { return Focus; }
+	FString GetFocusPrompt(bool& bCan) const;
 	void TryRefund(int32 Node);
 
 	// Kills needed for each evolution step (GDD §4: ~5 per stage [D]).
@@ -118,6 +140,10 @@ protected:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPointLightComponent> SparkLight;
 	// Skeleton stage body (Fab "Free Pack - Human Skeleton", Mixamo-rigged). Copies the hidden Wraith pose each frame.
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPoseableMeshComponent> SkeletonMesh;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> HelmetOnFlesh;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> HelmetOnBones;
+	UPROPERTY() TObjectPtr<class UInputAction> InteractAction;
+	UPROPERTY() TObjectPtr<class AFNRiteObject> Focus;
 
 	UPROPERTY() TObjectPtr<class UAnimMontage> FireMontage;
 	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
@@ -139,6 +165,13 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
 private:
+	void OnInteract();
+	void UpdateFocus();
+	void UpdateHelmet();
+	TArray<FName> Satchel;
+	FString SubSpeaker, SubText;
+	double SubTime = -100.0;
+	bool bHelmet = false;
 	// Per-bone retarget Wraith (Epic names) -> Mixamo skeleton, in world space, aligning rest-pose bone directions.
 	struct FRetargetBone { FName Src, Dst; int32 SrcIdx = INDEX_NONE, DstIdx = INDEX_NONE; FQuat Align = FQuat::Identity; };
 	TArray<FRetargetBone> RetargetBones;

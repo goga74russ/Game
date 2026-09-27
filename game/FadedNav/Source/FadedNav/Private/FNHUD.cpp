@@ -11,6 +11,7 @@
 #include "FNHealthComponent.h"
 #include "FNMob.h"
 #include "FNPerunBoss.h"
+#include "FNRite.h"
 #include "FNSkillTree.h"
 #include "RenderUtils.h"
 #include "TextureResource.h"
@@ -856,6 +857,42 @@ void AFNHUD::DrawHUD()
 			}
 		}
 
+		// ---- Interaction prompt (rites): key box + "Коза — подоить"; greyed with the reason when not possible.
+		{
+			bool bCan = false;
+			const FString Prompt = Player->GetFocusPrompt(bCan);
+			if (!Prompt.IsEmpty())
+			{
+				float TW = 0.f, TH = 0.f;
+				GetTextSize(Prompt, TW, TH, Font(2, 18.f));
+				const float PY = H - 212.f;
+				if (bCan)
+				{
+					const float KX = W * 0.5f - TW / S * 0.5f - 34.f;
+					FillBevel(KX, PY + 1.f, 24.f, 22.f, 4.f, Ink2);
+					LineBevel(KX, PY + 1.f, 24.f, 22.f, 4.f, Line, 1.f);
+					Txt(TEXT("E"), KX + 12.f, PY + 1.f, Font(1, 16.f), Bone, EAlign::Center);
+					Txt(Prompt, W * 0.5f + 8.f, PY, Font(2, 18.f), Bone, EAlign::Center);
+				}
+				else
+				{
+					Txt(Prompt, W * 0.5f, PY, Font(3, 17.f), BoneDim, EAlign::Center);
+				}
+			}
+		}
+
+		// ---- Satchel (rite items), above the Spark emblem.
+		if (Player->GetSatchel().Num() > 0)
+		{
+			float SY = H - 30.f - 72.f - 26.f - 20.f * Player->GetSatchel().Num();
+			Txt(TEXT("сума"), 30.f, SY, Font(3, 14.f), BoneDim);
+			for (const FName& Item : Player->GetSatchel())
+			{
+				SY += 20.f;
+				Txt(FString(TEXT("·  ")) + AFNRiteObject::ItemName(Item), 30.f, SY, Font(2, 16.f), Bone);
+			}
+		}
+
 		// ---- Event messages, upper centre, with a faint ember glow.
 		if (Player->GetMessageAge() < 3.5f && !Player->GetMessage().IsEmpty())
 		{
@@ -916,11 +953,12 @@ void AFNHUD::DrawHUD()
 		Txt(TEXT("Искра гаснет…"), W * 0.5f, H * 0.4f, Font(3, 34.f), Hex(TEXT("bfe6f5")), EAlign::Center);
 	}
 
-	// Subtitles: gold speaker in small caps, italic line.
-	if (Boss && Boss->HasSubtitle())
+	// Subtitles: gold speaker in small caps, italic line (the boss, or an NPC the hero talks to).
+	const bool bBossSub = Boss && Boss->HasSubtitle();
+	if (bBossSub || (Player && Player->HasSubtitle()))
 	{
-		const FString Who = Boss->GetSubtitleSpeaker().ToUpper();
-		const FString Line1 = Boss->GetSubtitle();
+		const FString Who = (bBossSub ? Boss->GetSubtitleSpeaker() : Player->GetSubSpeaker()).ToUpper();
+		const FString Line1 = bBossSub ? Boss->GetSubtitle() : Player->GetSubText();
 		float WW = 0.f, WH = 0.f, LW = 0.f, LH = 0.f;
 		GetTextSize(Who, WW, WH, Font(1, 17.f));
 		GetTextSize(Line1, LW, LH, Font(3, 24.f));

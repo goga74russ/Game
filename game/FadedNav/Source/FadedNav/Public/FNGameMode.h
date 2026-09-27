@@ -20,10 +20,16 @@ public:
 	void NotifyMobKilled(class AFNMob* Mob);
 	int32 GetKills() const { return Kills; }
 
+	// World flags of the rite engine (secrets_v0.1). No save system yet: they live for the session.
+	bool HasFlag(FName Flag) const { return Flags.Contains(Flag); }
+	void SetFlag(FName Flag) { Flags.Add(Flag); }
+
 private:
 	void BuildArena();
 	void SpawnChapterMobs();
 	void SpawnChapterItems();
+	void SpawnRites();
+	TSet<FName> Flags;
 
 	int32 Kills = 0;
 	int32 NextRune = 0;

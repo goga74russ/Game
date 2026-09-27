@@ -1,4 +1,5 @@
 #include "FNGameMode.h"
+#include "FNRite.h"
 
 #include "Components/DirectionalLightComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -125,6 +126,7 @@ void AFNGameMode::BuildArena()
 		}
 		SpawnChapterMobs();
 		SpawnChapterItems();
+		SpawnRites();
 		// Stands in the centre with his back to the entrance.
 		World->SpawnActor<AFNPerunBoss>(AFNVysiGreybox::ArenaCenter() + FVector(300.f, 0.f, 200.f), FRotator(0.f, 0.f, 0.f), Params);
 	}
@@ -238,5 +240,77 @@ void AFNGameMode::SpawnChapterMobs()
 		{
 			Mob->InitType(Spot.Type);
 		}
+	}
+}
+
+void AFNGameMode::SpawnRites()
+{
+	// Rite chains of the demo (docs/systems/secrets_v0.1.md, docs/lore/vysi_secrets_v0.1.md; director 2026-09-27):
+	// tutorial "Что с неба" (arrow from the sky under the blackened beam) and the simple "молоко на череп".
+	UWorld* World = GetWorld();
+	constexpr float M = 100.f;
+	auto Ground = [World](float X, float Y) -> FVector
+	{
+		FHitResult Hit;
+		if (World->LineTraceSingleByChannel(Hit, FVector(X * M, Y * M, 500.f * M), FVector(X * M, Y * M, -100.f * M), ECC_WorldStatic, FCollisionQueryParams(SCENE_QUERY_STAT(FNRiteGround), false)))
+		{
+			return Hit.ImpactPoint;
+		}
+		return FVector(X * M, Y * M, 0.f);
+	};
+	auto Spawn = [&](float X, float Y, float Yaw, const FFNRiteStep& Step, EFNRiteLook Look)
+	{
+		const FTransform At(FRotator(0.f, Yaw, 0.f), Ground(X, Y));
+		if (AFNRiteObject* R = World->SpawnActorDeferred<AFNRiteObject>(AFNRiteObject::StaticClass(), At, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn))
+		{
+			R->FinishSpawning(At);
+			R->Init(Step, Look);
+		}
+	};
+	const uint8 Hands = FNStage::Skeleton | FNStage::Flesh;
+
+	// ---- Tutorial "Что с неба": the arrow-digger elder in Strelokopni (lines: vysi_secrets_v0.1, status Пр.).
+	{
+		FFNRiteStep S;
+		S.Name = TEXT("Дед-стрелокоп"); S.Action = TEXT("говорить"); S.Verb = EFNVerb::Talk; S.Speaker = TEXT("Дед-стрелокоп");
+		S.Lines.Add({ NAME_None, NAME_None, TEXT("Копаешь — копай. Только ту, что с неба, в мешок не кидай. Её в руке держат, пока не согреется."), TEXT("MetStrelokop") });
+		S.Lines.Add({ NAME_None, TEXT("SkyArrow"), TEXT("Эта. Неси туда, где уже горело. Под матицу. Сама скажет, когда ляжет."), NAME_None });
+		S.Lines.Add({ TEXT("CacheOpen"), NAME_None, TEXT("Видал? Никто тебе не скажет, что куда. Выси сами показывают. Смотри, где пусто."), NAME_None });
+		Spawn(326.f, -54.f, 30.f, S, EFNRiteLook::Elder);
+	}
+	{
+		// The one arrow with a fused tip among the plain ones ("вещь со знаком").
+		FFNRiteStep S;
+		S.Name = TEXT("Стрела с оплавленным концом"); S.Action = TEXT("взять"); S.Verb = EFNVerb::Take; S.Stages = Hands;
+		S.RefuseSpark = TEXT("Искре нечем взять");
+		S.GiveItem = TEXT("SkyArrow"); S.DoneText = TEXT("Стрела с оплавленным концом. Тёплая.");
+		Spawn(348.f, -30.f, 0.f, S, EFNRiteLook::SkyArrow);
+	}
+	{
+		// The house whose beam is black from an old fire ("место с пустотой"), placed on the oak's strike ("свой час").
+		FFNRiteStep S;
+		S.Name = TEXT("Чёрная матица"); S.Action = TEXT("положить стрелу"); S.Verb = EFNVerb::Place; S.Stages = Hands;
+		S.RefuseSpark = TEXT("Искре нечем взять");
+		S.NeedItem = TEXT("SkyArrow"); S.bThunder = true; S.WaitText = TEXT("стрела не ложится");
+		S.SetFlag = TEXT("CacheOpen"); S.Reward = EFNRiteReward::StrelokopCache;
+		S.DoneText = TEXT("Стрела легла за матицу. Под полом что-то стукнуло.");
+		Spawn(-23.8f, -15.f, 0.f, S, EFNRiteLook::Beam); // just clear of the sod roof edge, so the ground trace hits the ground
+	}
+
+	// ---- Hidden chain "молоко на череп" (simple version): only Flesh can milk and carry milk.
+	{
+		FFNRiteStep S;
+		S.Name = TEXT("Коза"); S.Action = TEXT("подоить"); S.Verb = EFNVerb::Milk; S.Stages = FNStage::Flesh;
+		S.RefuseSpark = TEXT("Искре нечем доить"); S.RefuseSkeleton = TEXT("молоко протечёт сквозь рёбра");
+		S.GiveItem = TEXT("Milk"); S.DoneText = TEXT("Крынка молока."); S.bOneShot = false;
+		Spawn(524.f, -38.f, 70.f, S, EFNRiteLook::Goat);
+	}
+	{
+		FFNRiteStep S;
+		S.Name = TEXT("Конский череп"); S.Action = TEXT("полить молоком"); S.Verb = EFNVerb::Pour;
+		S.NeedItem = TEXT("Milk"); S.Reward = EFNRiteReward::HorseHelmet; S.SetFlag = TEXT("HorseHelmet");
+		S.ShotText = TEXT("Бубенец звякнул.");
+		S.DoneText = TEXT("Молоко впиталось в кость. Бубенец замолк — череп снялся с кола.");
+		Spawn(539.f, -28.f, 180.f, S, EFNRiteLook::SkullPole);
 	}
 }

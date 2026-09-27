@@ -1,4 +1,5 @@
 #include "FNVysiGreybox.h"
+#include "FNRite.h"
 #include "FNSkillTree.h"
 
 #include "Components/DirectionalLightComponent.h"
@@ -476,6 +477,7 @@ void AFNVysiGreybox::Tick(float DeltaSeconds)
 	if (LightningTimer <= 0.f && OakFlash)
 	{
 		LightningTimer = 12.f;
+		AFNRiteObject::LastThunderTime = GetWorld()->GetTimeSeconds(); // "свой час" for rites
 		FlashRemaining = 0.12f;
 		OakFlash->SetIntensity(2000000.f);
 

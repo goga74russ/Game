@@ -13,6 +13,7 @@
 #include "EngineUtils.h"
 #include "FNGameMode.h"
 #include "FNMob.h"
+#include "FNRite.h"
 #include "FNPerunBoss.h"
 #include "FNSkillTree.h"
 #include "Kismet/GameplayStatics.h"
@@ -219,6 +220,8 @@ void AFNCharacter::BuildInput()
 		AbilityActions[i] = MakeAction(EInputActionValueType::Boolean);
 		Mapping->MapKey(AbilityActions[i], AbilityKeys[i]);
 	}
+	InteractAction = MakeAction(EInputActionValueType::Boolean);
+	Mapping->MapKey(InteractAction, EKeys::E);
 	TreeAction = MakeAction(EInputActionValueType::Boolean);
 	TreeAction->bTriggerWhenPaused = true;
 	Mapping->MapKey(TreeAction, EKeys::Tab);
@@ -259,6 +262,7 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(AbilityActions[i], ETriggerEvent::Started, this, &AFNCharacter::OnAbility, i);
 	}
 	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
+	Input->BindAction(InteractAction, ETriggerEvent::Started, this, &AFNCharacter::OnInteract);
 }
 
 void AFNCharacter::OnMove(const FInputActionValue& Value)
@@ -424,6 +428,7 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 
 	if (bHit && Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(TEXT("ParryPoint")))
 	{
+		if (AFNRiteObject* Rite = Cast<AFNRiteObject>(Hit.GetActor())) { Rite->OnShot(this); } // near-miss feedback
 		if (AFNPerunBoss* Boss = Cast<AFNPerunBoss>(Hit.GetActor()))
 		{
 			Boss->TryParry();
@@ -570,6 +575,7 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 		}
 	}
 
+	UpdateHelmet();
 	StageBaseHealth = BaseHealth;
 	StageBaseSpeed = Speed;
 	ApplyStats();
@@ -794,6 +800,49 @@ void AFNCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateRetarget();
+	UpdateFocus();
+	// Test key "-RiteTest": walks the two rite chains as Flesh and screenshots each step (UI review).
+	if (FParse::Param(FCommandLine::Get(), TEXT("RiteTest")))
+	{
+		static int32 RStep = 0;
+		const float T = GetWorld()->GetTimeSeconds();
+		APlayerController* PC = Cast<APlayerController>(GetController());
+		auto Near = [this, PC](float X, float Y, float BackM)
+		{
+			FHitResult Hit;
+			const FVector Target(X * 100.f, Y * 100.f, 0.f);
+			const FVector From = Target - FVector(BackM * 100.f, 0.f, 0.f);
+			GetWorld()->LineTraceSingleByChannel(Hit, From + FVector(0, 0, 50000.f), From - FVector(0, 0, 10000.f), ECC_WorldStatic);
+			SetActorLocation(Hit.ImpactPoint + FVector(0.f, 0.f, 100.f), false, nullptr, ETeleportType::TeleportPhysics);
+			LastSafeLocation = GetActorLocation(); // a test teleport is not a fall
+			if (PC) { PC->SetControlRotation(FRotator(-10.f, 0.f, 0.f)); }
+		};
+		auto Shot = [](const TCHAR* Name) { FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString(Name) + TEXT(".png"), false, false); };
+		struct FS { float At; int32 Id; };
+		static const FS Plan[] = { { 8, 0 }, { 9.5f, 1 }, { 10.5f, 2 }, { 12, 3 }, { 13, 4 }, { 14, 5 }, { 15, 6 }, { 17, 7 }, { 18, 8 }, { 19.5f, 9 }, { 21, 10 }, { 22, 11 }, { 23.5f, 12 }, { 25, 13 } };
+		if (RStep < UE_ARRAY_COUNT(Plan) && T > Plan[RStep].At)
+		{
+			switch (Plan[RStep].Id)
+			{
+			case 0: SetStage(EFNStage::Flesh, false); Near(326.f, -54.f, 3.f); break;
+			case 1: Shot(TEXT("30_elder_prompt")); break;
+			case 2: OnInteract(); break;
+			case 3: Shot(TEXT("31_elder_line")); Near(348.f, -30.f, 2.5f); break;
+			case 4: Shot(TEXT("32_arrow_prompt")); OnInteract(); break;
+			case 5: Near(-23.8f, -15.f, -2.5f); if (PC) { PC->SetControlRotation(FRotator(-10.f, 180.f, 0.f)); } break;
+			case 6: Shot(TEXT("33_beam_wait")); for (TActorIterator<AFNVysiGreybox> It(GetWorld()); It; ++It) { It->StrikeNow(); } break;
+			case 7: OnInteract(); break;
+			case 8: Shot(TEXT("34_cache")); Near(524.f, -38.f, 2.5f); break;
+			case 9: Shot(TEXT("35_goat_prompt")); OnInteract(); break;
+			case 10: Near(539.f, -28.f, 2.5f); break;
+			case 11: Shot(TEXT("36_skull_prompt")); OnInteract(); break;
+			case 12: if (PC) { PC->SetControlRotation(FRotator(-15.f, 180.f, 0.f)); } Shot(TEXT("37_helmet")); break;
+			case 13: if (PC) { PC->ConsoleCommand(TEXT("quit")); } break;
+			}
+			++RStep;
+		}
+	}
+
 	// Test key "-PoseShot": stand, then run sideways past the camera, screenshot both, quit.
 	if (FParse::Param(FCommandLine::Get(), TEXT("PoseShot")))
 	{
@@ -994,4 +1043,72 @@ void AFNCharacter::UpdateRetarget()
 			SkeletonMesh->SetBoneLocationByName(B.Dst, SrcC.TransformPosition(DstRest.GetLocation() + (SrcNow.GetLocation() - SrcRest.GetLocation())), EBoneSpaces::WorldSpace);
 		}
 	}
+}
+
+void AFNCharacter::ShowSubtitle(const FString& Speaker, const FString& Text)
+{
+	SubSpeaker = Speaker;
+	SubText = Text;
+	SubTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+}
+
+bool AFNCharacter::HasSubtitle() const
+{
+	return GetWorld() && GetWorld()->GetTimeSeconds() - SubTime < 5.0;
+}
+
+void AFNCharacter::UpdateFocus()
+{
+	Focus = nullptr;
+	if (bDead || bTreeOpen) { return; }
+	float Best = 330.f;
+	const FVector Me = GetActorLocation();
+	const FVector Fwd = GetControlRotation().Vector().GetSafeNormal2D();
+	for (TActorIterator<AFNRiteObject> It(GetWorld()); It; ++It)
+	{
+		if (It->IsSpent()) { continue; }
+		const FVector To = It->GetActorLocation() - Me;
+		const float D = To.Size2D();
+		if (D < Best && FMath::Abs(To.Z) < 400.f && FVector::DotProduct(To.GetSafeNormal2D(), Fwd) > 0.2f) { Best = D; Focus = *It; }
+	}
+}
+
+FString AFNCharacter::GetFocusPrompt(bool& bCan) const
+{
+	bCan = false;
+	return Focus ? Focus->GetPrompt(this, bCan) : FString();
+}
+
+void AFNCharacter::OnInteract()
+{
+	if (Focus && !bDead && !bTreeOpen) { Focus->Use(this); }
+}
+
+void AFNCharacter::GiveHelmet()
+{
+	bHelmet = true;
+	auto Make = [this](USceneComponent* Parent, FName Socket, const FVector& Offset)
+	{
+		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(this);
+		C->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetupAttachment(Parent, Socket);
+		C->SetRelativeLocation(Offset);
+		C->SetRelativeScale3D(FVector(0.3f, 0.18f, 0.2f));
+		C->RegisterComponent();
+		if (UMaterialInstanceDynamic* MID = C->CreateDynamicMaterialInstance(0, LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"))))
+		{
+			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.82f, 0.79f, 0.7f));
+		}
+		return C;
+	};
+	if (!HelmetOnFlesh && GetMesh()->GetSkeletalMeshAsset()) { HelmetOnFlesh = Make(GetMesh(), TEXT("head"), FVector(12.f, 0.f, 0.f)); }
+	if (!HelmetOnBones && SkeletonMesh->GetSkinnedAsset()) { HelmetOnBones = Make(SkeletonMesh, TEXT("Head"), FVector(0.f, 12.f, 0.f)); }
+	UpdateHelmet();
+}
+
+void AFNCharacter::UpdateHelmet()
+{
+	if (HelmetOnFlesh) { HelmetOnFlesh->SetVisibility(bHelmet && GetMesh()->IsVisible()); }
+	if (HelmetOnBones) { HelmetOnBones->SetVisibility(bHelmet && SkeletonMesh->IsVisible()); }
 }
