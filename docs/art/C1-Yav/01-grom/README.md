@@ -14,8 +14,8 @@
 | `boss/` | `mentor.md` — наставник; `perun_nav.md` — настоящий Перун (вне демо) |
 | `mobs/elite/` | `zhilny_uzel.md`, `kozy_vozhak.md` |
 | `mobs/normal/` | `otrost.md` (+ призываемые), `strelnik.md`, `ryhlets.md` |
-| `npc/` | `ded_navya.md` (+ кит дедов), `ded_strelokop.md`, `prisyazhnik.md`, `obmolvka.md`, `gorazd.md`, `nechay.md`, `zhdana.md`, `lyudi_vysey.md` (кит живых) |
-| `world/` | `kozy.md`; окружение главы — сюда же |
+| `npc/` | `ded_navya.md` (+ кит дедов), `ded_strelokop.md`, `prisyazhnik.md`, `obmolvka.md`, `gorazd.md`, `nechay.md`, `zhdana.md`, `lyudi_vysey.md` (кит живых), `kozy.md` (фауна) |
+| `world/` | окружение главы |
 
 Решения директора по вопросам §8 (2026-09-27) — в `memories/consensus.md`, раздел «Решения директора по библии персонажей»; в карточки ещё не внесены.
 
