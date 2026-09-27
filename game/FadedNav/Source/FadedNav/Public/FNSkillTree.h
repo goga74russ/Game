@@ -8,7 +8,10 @@ UENUM()
 enum class EFNNodeKind : uint8 { Root, Small, Notable, Keystone };
 
 // What a node changes (GDD §6: Increased = additive, More = multiplicative; keystones use Special).
-enum class EFNStat : uint8 { None, Ranged, Reserve, FireRate, Weak, Reload, MaxHPFlat, Melee, MeleeHeal, StaminaRegen, DamageTaken, DodgeCost, Move, WeakFlinch };
+// Table names (docs/systems/tree/*.csv, column stat1..3): ranged, reserve, fire_rate, weak, reload, max_hp_flat, melee, melee_heal,
+// stamina_regen, damage_taken, dodge_cost, move, weak_flinch, ranged_more, max_hp_inc, iframes, damage_taken_more, fire_rate_more.
+enum class EFNStat : uint8 { None, Ranged, Reserve, FireRate, Weak, Reload, MaxHPFlat, Melee, MeleeHeal, StaminaRegen, DamageTaken, DodgeCost, Move, WeakFlinch,
+	RangedMore, MaxHPInc, IFrames, DamageTakenMore, FireRateMore };
 
 // Derived modifiers from allocated nodes.
 struct FFNTreeStats
@@ -41,9 +44,7 @@ struct FFNNode
 	EFNNodeKind Kind = EFNNodeKind::Small;
 	int32 God = -1;           // sector 0..7 in the GDD ring order (0 = Perun), -1 = boundary node between sectors
 	bool bSealed = false;     // needs its rune-key (GDD §6: rune = key)
-	EFNStat Stat = EFNStat::None;
-	float Value = 0.f;
-	int32 Special = 0;        // 1 = Ball Lightning, 2 = Bone Rampart
+	TArray<TPair<EFNStat, float>> Effects; // up to 3, from the sector table
 	int32 Icon = 0;           // line-art icon id for the HUD
 	TArray<int32> Links;
 };
@@ -60,7 +61,8 @@ public:
 	UFNSkillTree();
 
 	static const TArray<FFNNode>& Nodes();
-	static const TArray<int32>& RuneOrder(); // sealed nodes in drop order
+	static const TArray<int32>& RuneOrder(); // sealed nodes in drop order (column rune_order)
+	static FString TablePath();              // which csv filled the open sector ("" = built-in defaults)
 	static const TCHAR* GodName(int32 God);
 	static const TCHAR* GodElement(int32 God);
 	static FLinearColor GodColor(int32 God);

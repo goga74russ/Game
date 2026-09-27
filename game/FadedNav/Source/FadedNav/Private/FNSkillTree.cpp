@@ -1,4 +1,5 @@
 #include "FNSkillTree.h"
+#include "FNCsv.h"
 
 namespace
 {
@@ -12,30 +13,100 @@ namespace
 	// Icon per closed sector (HUD line art): drop, spindle, flame, skull, sun, wind, flame.
 	const int32 GodIcons[] = { 1, 5, 8, 9, 10, 11, 12, 9 };
 
-	struct FSmall { const TCHAR* Name; St Stat; float Value; };
-	// Perun's small nodes: milder copies of the demo effects, cycled along the branch.
-	const FSmall PerunSmall[] = {
-		{ TEXT("+8% урона выстрелов"), St::Ranged, 0.08f },
-		{ TEXT("+15% запаса патронов"), St::Reserve, 0.15f },
-		{ TEXT("+8% скорости перезарядки"), St::Reload, 0.08f },
-		{ TEXT("+6% скорострельности"), St::FireRate, 0.06f },
-		{ TEXT("+10 к здоровью"), St::MaxHPFlat, 10.f },
-		{ TEXT("+12% урона удара"), St::Melee, 0.12f },
-		{ TEXT("+12% восстановления выносливости"), St::StaminaRegen, 0.12f },
-		{ TEXT("+5% скорости"), St::Move, 0.05f },
-		{ TEXT("−10% цены уклонения"), St::DodgeCost, -0.10f },
+	// Content of a sector's nodes (names, effects, seals). The layout (branches, clusters) stays in Build().
+	struct FContent
+	{
+		FString Name, Desc;
+		TArray<TPair<St, float>> Effects;
+		int32 Icon = 0;
+		bool bSealed = false;
+		int32 RuneOrder = -1;
 	};
+	struct FSectorContent { FContent Gate; TArray<FContent> Small, Notable, Keystone; FString Path; };
 
-	struct FNotable { const TCHAR* Name; const TCHAR* Desc; St Stat; float Value; int32 Icon; };
-	// The demo notables (director-approved names), one per cluster; "Раскат" added with tree mockup v1.
-	const FNotable PerunNotable[] = {
-		{ TEXT("Громовой Шлейф"), TEXT("+20% к скорострельности."), St::FireRate, 0.20f, 1 },
-		{ TEXT("Заговор на Сталь"), TEXT("+30% урона по слабым местам."), St::Weak, 0.30f, 2 },
-		{ TEXT("Закалка"), TEXT("Получаешь на 15% меньше урона."), St::DamageTaken, -0.15f, 3 },
-		{ TEXT("Лёгкая Стопа"), TEXT("+15% скорости, уклонение на 25% дешевле."), St::Move, 0.15f, 4 },
-		{ TEXT("Ярь Крови"), TEXT("Каждый удар вблизи лечит на 6."), St::MeleeHeal, 6.f, 5 },
-		{ TEXT("Раскат"), TEXT("Выстрел в уязвимое место заставляет тварь вздрогнуть."), St::WeakFlinch, 1.f, 6 },
-	};
+	St StatFromName(const FString& N)
+	{
+		static const TMap<FString, St> Map = {
+			{ TEXT("ranged"), St::Ranged }, { TEXT("reserve"), St::Reserve }, { TEXT("fire_rate"), St::FireRate }, { TEXT("weak"), St::Weak },
+			{ TEXT("reload"), St::Reload }, { TEXT("max_hp_flat"), St::MaxHPFlat }, { TEXT("melee"), St::Melee }, { TEXT("melee_heal"), St::MeleeHeal },
+			{ TEXT("stamina_regen"), St::StaminaRegen }, { TEXT("damage_taken"), St::DamageTaken }, { TEXT("dodge_cost"), St::DodgeCost },
+			{ TEXT("move"), St::Move }, { TEXT("weak_flinch"), St::WeakFlinch }, { TEXT("ranged_more"), St::RangedMore }, { TEXT("max_hp_inc"), St::MaxHPInc },
+			{ TEXT("iframes"), St::IFrames }, { TEXT("damage_taken_more"), St::DamageTakenMore }, { TEXT("fire_rate_more"), St::FireRateMore },
+		};
+		const St* Found = Map.Find(N.ToLower());
+		return Found ? *Found : St::None;
+	}
+
+	// Built-in fallback = the approved demo content (used only if the table is missing).
+	FSectorContent PerunDefaults()
+	{
+		auto C = [](const TCHAR* Name, const TCHAR* Desc, std::initializer_list<TPair<St, float>> Fx, int32 Icon = 0, bool bSeal = false, int32 Rune = -1)
+		{
+			FContent X; X.Name = Name; X.Desc = Desc; X.Effects = Fx; X.Icon = Icon; X.bSealed = bSeal; X.RuneOrder = Rune; return X;
+		};
+		FSectorContent P;
+		P.Gate = C(TEXT("Врата Грома"), TEXT("Вход в ветвь Перуна: +5% урона выстрелов."), { { St::Ranged, 0.05f } }, 1);
+		P.Small = {
+			C(TEXT("+8% урона выстрелов"), TEXT("Малый узел."), { { St::Ranged, 0.08f } }), C(TEXT("+15% запаса патронов"), TEXT("Малый узел."), { { St::Reserve, 0.15f } }),
+			C(TEXT("+8% скорости перезарядки"), TEXT("Малый узел."), { { St::Reload, 0.08f } }), C(TEXT("+6% скорострельности"), TEXT("Малый узел."), { { St::FireRate, 0.06f } }),
+			C(TEXT("+10 к здоровью"), TEXT("Малый узел."), { { St::MaxHPFlat, 10.f } }), C(TEXT("+12% урона удара"), TEXT("Малый узел."), { { St::Melee, 0.12f } }),
+			C(TEXT("+12% восстановления выносливости"), TEXT("Малый узел."), { { St::StaminaRegen, 0.12f } }), C(TEXT("+5% скорости"), TEXT("Малый узел."), { { St::Move, 0.05f } }),
+			C(TEXT("−10% цены уклонения"), TEXT("Малый узел."), { { St::DodgeCost, -0.10f } }),
+		};
+		P.Notable = {
+			C(TEXT("Громовой Шлейф"), TEXT("+20% к скорострельности."), { { St::FireRate, 0.20f } }, 1, true, 0),
+			C(TEXT("Заговор на Сталь"), TEXT("+30% урона по слабым местам."), { { St::Weak, 0.30f } }, 2, true, 3),
+			C(TEXT("Закалка"), TEXT("Получаешь на 15% меньше урона."), { { St::DamageTaken, -0.15f } }, 3, true, 4),
+			C(TEXT("Лёгкая Стопа"), TEXT("+15% скорости, уклонение на 25% дешевле."), { { St::Move, 0.15f }, { St::DodgeCost, -0.25f } }, 4, true, 2),
+			C(TEXT("Ярь Крови"), TEXT("Каждый удар вблизи лечит на 6."), { { St::MeleeHeal, 6.f } }, 5, true, 1),
+			C(TEXT("Раскат"), TEXT("Выстрел в уязвимое место заставляет тварь вздрогнуть."), { { St::WeakFlinch, 1.f } }, 6, true, 7),
+		};
+		P.Keystone = {
+			C(TEXT("Шаровая Молния"), TEXT("КЛЮЧЕВОЙ: урон выстрелов в 1,3 раза БОЛЬШЕ, но −20% здоровья."), { { St::RangedMore, 1.3f }, { St::MaxHPInc, -0.2f } }, 1, true, 5),
+			C(TEXT("Костяной Вал"), TEXT("КЛЮЧЕВОЙ: +0,15 с неуязвимости при уклонении, в 1,1 раза МЕНЬШЕ урона, −15% скорострельности."),
+				{ { St::IFrames, 0.15f }, { St::DamageTakenMore, 0.9f }, { St::FireRateMore, 0.85f } }, 7, true, 6),
+		};
+		return P;
+	}
+
+	const FSectorContent& Perun()
+	{
+		static const FSectorContent Content = []
+		{
+			FSectorContent P = PerunDefaults();
+			FFNCsv T;
+			if (!T.Load(TEXT("tree/01-grom.csv"))) { UE_LOG(LogTemp, Warning, TEXT("Tree: 01-grom.csv not found, built-in defaults")); return P; }
+			const int32 CKind = T.Col(TEXT("kind")), CName = T.Col(TEXT("name_ru")), CDesc = T.Col(TEXT("desc")), CIcon = T.Col(TEXT("icon")),
+				CSeal = T.Col(TEXT("sealed")), CRune = T.Col(TEXT("rune_order"));
+			const int32 CS[3] = { T.Col(TEXT("stat1")), T.Col(TEXT("stat2")), T.Col(TEXT("stat3")) };
+			const int32 CV[3] = { T.Col(TEXT("value1")), T.Col(TEXT("value2")), T.Col(TEXT("value3")) };
+			FSectorContent F;
+			bool bGate = false;
+			for (const TArray<FString>& R : T.Rows)
+			{
+				FContent X;
+				X.Name = T.Str(R, CName); X.Desc = T.Str(R, CDesc); X.Icon = FMath::RoundToInt(T.Num(R, CIcon));
+				X.bSealed = T.Num(R, CSeal) > 0.5f; X.RuneOrder = T.Has(R, CRune) ? FMath::RoundToInt(T.Num(R, CRune)) : -1;
+				for (int32 k = 0; k < 3; ++k) { if (T.Has(R, CS[k])) { X.Effects.Add({ StatFromName(T.Str(R, CS[k])), T.Num(R, CV[k]) }); } }
+				const FString Kind = T.Str(R, CKind).ToLower();
+				if (Kind == TEXT("gate")) { F.Gate = X; bGate = true; }
+				else if (Kind == TEXT("small")) { F.Small.Add(X); }
+				else if (Kind == TEXT("notable")) { F.Notable.Add(X); }
+				else if (Kind == TEXT("keystone")) { F.Keystone.Add(X); }
+			}
+			if (!bGate || F.Small.Num() == 0 || F.Notable.Num() == 0 || F.Keystone.Num() < 2) { UE_LOG(LogTemp, Warning, TEXT("Tree: %s incomplete, defaults"), *T.Path); return P; }
+			F.Path = T.Path;
+			UE_LOG(LogTemp, Log, TEXT("Tree: %d small, %d notable, %d keystone from %s"), F.Small.Num(), F.Notable.Num(), F.Keystone.Num(), *T.Path);
+			return F;
+		}();
+		return Content;
+	}
+
+	void Apply(FFNNode& N, const FContent& C)
+	{
+		N.Name = C.Name; N.Desc = C.Desc; N.Effects = C.Effects; N.bSealed = C.bSealed;
+		if (C.Icon > 0) { N.Icon = C.Icon; }
+	}
 
 	TArray<FFNNode> Build()
 	{
@@ -58,19 +129,14 @@ namespace
 			auto MakeSmall = [&](FVector2D At)
 			{
 				FFNNode S; S.Pos = At; S.Kind = K::Small; S.God = G;
-				if (bOpen)
-				{
-					const FSmall& D = PerunSmall[(SmallI++) % UE_ARRAY_COUNT(PerunSmall)];
-					S.Name = D.Name; S.Desc = TEXT("Малый узел."); S.Stat = D.Stat; S.Value = D.Value;
-				}
+				if (bOpen) { Apply(S, Perun().Small[(SmallI++) % Perun().Small.Num()]); }
 				else { S.Name = TEXT("???"); S.Desc = TEXT("Скрыто туманом."); }
 				return Add(S);
 			};
 
 			FFNNode Gate; Gate.Pos = P(130.f, A0); Gate.Kind = K::Notable; Gate.God = G; Gate.Icon = GodIcons[G];
-			Gate.Name = bOpen ? TEXT("Врата Грома") : FString::Printf(TEXT("Врата: %s"), Gods[G]);
-			Gate.Desc = bOpen ? TEXT("Вход в ветвь Перуна: +5% урона выстрелов.") : TEXT("Скрыто туманом.");
-			if (bOpen) { Gate.Stat = St::Ranged; Gate.Value = 0.05f; }
+			if (bOpen) { Apply(Gate, Perun().Gate); }
+			else { Gate.Name = FString::Printf(TEXT("Врата: %s"), Gods[G]); Gate.Desc = TEXT("Скрыто туманом."); }
 			const int32 GateIdx = Add(Gate);
 			Gates.Add(GateIdx);
 			Link(RootIdx, GateIdx);
@@ -101,11 +167,7 @@ namespace
 					Prev = Id;
 				}
 				FFNNode Nt; Nt.Pos = P(BR + Len * 38.f + 44.f, Ang + Side * (Len * 0.055f + 0.05f)); Nt.Kind = K::Notable; Nt.God = G;
-				if (bOpen)
-				{
-					const FNotable& D = PerunNotable[(NotableI++) % UE_ARRAY_COUNT(PerunNotable)];
-					Nt.Name = D.Name; Nt.Desc = D.Desc; Nt.Stat = D.Stat; Nt.Value = D.Value; Nt.Icon = D.Icon; Nt.bSealed = true;
-				}
+				if (bOpen) { Apply(Nt, Perun().Notable[(NotableI++) % Perun().Notable.Num()]); }
 				else { Nt.Name = TEXT("???"); Nt.Desc = TEXT("Скрыто туманом."); Nt.Icon = GodIcons[G]; }
 				Link(Prev, Add(Nt));
 			}
@@ -117,14 +179,7 @@ namespace
 				const int32 Pre = MakeSmall(P(730.f, A));
 				Link(Limb[5], Pre);
 				FFNNode Ks; Ks.Pos = P(830.f, A + Side * 0.02f); Ks.Kind = K::Keystone; Ks.God = G;
-				if (bOpen && Side < 0)
-				{
-					Ks.Name = TEXT("Шаровая Молния"); Ks.Desc = TEXT("КЛЮЧЕВОЙ: урон выстрелов в 1,3 раза БОЛЬШЕ, но −20% здоровья."); Ks.Special = 1; Ks.Icon = 1; Ks.bSealed = true;
-				}
-				else if (bOpen)
-				{
-					Ks.Name = TEXT("Костяной Вал"); Ks.Desc = TEXT("КЛЮЧЕВОЙ: +0,15 с неуязвимости при уклонении, в 1,1 раза МЕНЬШЕ урона, −15% скорострельности."); Ks.Special = 2; Ks.Icon = 7; Ks.bSealed = true;
-				}
+				if (bOpen) { Apply(Ks, Perun().Keystone[Side < 0 ? 0 : 1]); }
 				else { Ks.Name = TEXT("???"); Ks.Desc = TEXT("Скрыто туманом."); Ks.Icon = GodIcons[G]; }
 				Link(Pre, Add(Ks));
 			}
@@ -157,19 +212,23 @@ const TArray<FFNNode>& UFNSkillTree::Nodes()
 
 const TArray<int32>& UFNSkillTree::RuneOrder()
 {
-	// Same drop order as the demo tree, found by name; "Раскат" last.
+	// Drop order of the rune-keys = column rune_order of the sector table.
 	static const TArray<int32> Order = []
 	{
-		static const TCHAR* Names[] = { TEXT("Громовой Шлейф"), TEXT("Ярь Крови"), TEXT("Лёгкая Стопа"), TEXT("Заговор на Сталь"), TEXT("Закалка"), TEXT("Шаровая Молния"), TEXT("Костяной Вал"), TEXT("Раскат") };
+		TArray<TPair<int32, int32>> Seq; // (order, node)
+		const TArray<FFNNode>& N = Nodes();
+		auto Find = [&N](const FString& Name) { return N.IndexOfByPredicate([&Name](const FFNNode& X) { return X.bSealed && X.God == 0 && X.Name == Name; }); };
+		for (const FContent& C : Perun().Notable) { if (C.bSealed && C.RuneOrder >= 0) { Seq.Add({ C.RuneOrder, Find(C.Name) }); } }
+		for (const FContent& C : Perun().Keystone) { if (C.bSealed && C.RuneOrder >= 0) { Seq.Add({ C.RuneOrder, Find(C.Name) }); } }
+		Seq.Sort([](const TPair<int32, int32>& A, const TPair<int32, int32>& B) { return A.Key < B.Key; });
 		TArray<int32> O;
-		for (const TCHAR* Name : Names)
-		{
-			O.Add(Nodes().IndexOfByPredicate([Name](const FFNNode& N) { return N.bSealed && N.Name == Name; }));
-		}
+		for (const TPair<int32, int32>& P : Seq) { if (P.Value != INDEX_NONE) { O.AddUnique(P.Value); } }
 		return O;
 	}();
 	return Order;
 }
+
+FString UFNSkillTree::TablePath() { return Perun().Path; }
 
 const TCHAR* UFNSkillTree::GodName(int32 God) { return God >= 0 && God < 8 ? Gods[God] : TEXT("межа"); }
 const TCHAR* UFNSkillTree::GodElement(int32 God) { return God >= 0 && God < 8 ? Elements[God] : TEXT(""); }
@@ -249,26 +308,32 @@ FFNTreeStats UFNSkillTree::ComputeStats() const
 	FFNTreeStats S;
 	for (int32 Idx : Allocated)
 	{
-		const FFNNode& N = Nodes()[Idx];
-		switch (N.Stat)
+		for (const TPair<St, float>& E : Nodes()[Idx].Effects)
 		{
-		case St::Ranged: S.RangedInc += N.Value; break;
-		case St::Reserve: S.ReserveInc += N.Value; break;
-		case St::FireRate: S.FireRateInc += N.Value; break;
-		case St::Weak: S.WeakInc += N.Value; break;
-		case St::Reload: S.ReloadInc += N.Value; break;
-		case St::MaxHPFlat: S.MaxHPFlat += N.Value; break;
-		case St::Melee: S.MeleeInc += N.Value; break;
-		case St::MeleeHeal: S.MeleeHeal += N.Value; break;
-		case St::StaminaRegen: S.StaminaRegenInc += N.Value; break;
-		case St::DamageTaken: S.DamageTakenInc += N.Value; break;
-		case St::DodgeCost: S.DodgeCostInc += N.Value; break;
-		case St::Move: S.MoveInc += N.Value; if (N.Name == TEXT("Лёгкая Стопа")) { S.DodgeCostInc -= 0.25f; } break;
-		case St::WeakFlinch: S.bWeakFlinch = true; break;
-		default: break;
+			const float V = E.Value;
+			switch (E.Key)
+			{
+			case St::Ranged: S.RangedInc += V; break;
+			case St::Reserve: S.ReserveInc += V; break;
+			case St::FireRate: S.FireRateInc += V; break;
+			case St::Weak: S.WeakInc += V; break;
+			case St::Reload: S.ReloadInc += V; break;
+			case St::MaxHPFlat: S.MaxHPFlat += V; break;
+			case St::Melee: S.MeleeInc += V; break;
+			case St::MeleeHeal: S.MeleeHeal += V; break;
+			case St::StaminaRegen: S.StaminaRegenInc += V; break;
+			case St::DamageTaken: S.DamageTakenInc += V; break;
+			case St::DodgeCost: S.DodgeCostInc += V; break;
+			case St::Move: S.MoveInc += V; break;
+			case St::WeakFlinch: S.bWeakFlinch = V > 0.f; break;
+			case St::RangedMore: S.RangedMore *= V; break;
+			case St::MaxHPInc: S.MaxHPInc += V; break;
+			case St::IFrames: S.RollIFramesFlat += V; break;
+			case St::DamageTakenMore: S.DamageTakenMore *= V; break;
+			case St::FireRateMore: S.FireRateMore *= V; break;
+			default: break;
+			}
 		}
-		if (N.Special == 1) { S.RangedMore *= 1.3f; S.MaxHPInc -= 0.20f; }
-		if (N.Special == 2) { S.RollIFramesFlat += 0.15f; S.DamageTakenMore *= 0.9f; S.FireRateMore *= 0.85f; }
 	}
 	return S;
 }
