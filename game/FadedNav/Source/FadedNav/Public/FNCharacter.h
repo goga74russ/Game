@@ -47,9 +47,21 @@ public:
 	EFNStage GetStage() const { return Stage; }
 	EFNWeapon GetWeapon() const { return Weapon; }
 	int32 GetScatterAmmo() const { return ScatterAmmo; }
-	bool HasWeapon(EFNWeapon W) const { return W == EFNWeapon::Plasma || (W == EFNWeapon::Rifle && bHasRifle) || (W == EFNWeapon::Scatter && bHasScatter); }
+	bool HasWeapon(EFNWeapon W) const { return (W == EFNWeapon::Plasma && Stage == EFNStage::Spark) || (W == EFNWeapon::Rifle && bHasRifle) || (W == EFNWeapon::Scatter && bHasScatter); }
+	bool HasRangedWeapon() const { return Stage == EFNStage::Spark || bHasRifle || bHasScatter; }
 	FLinearColor GetSparkColor() const { return SparkColor; }
 	float GetArmor() const { return ArmorBonus; }
+	// Yar (GDD §5): gained from damage dealt and from perfect dodges, spent by skills. Numbers [D] until skills_demo.
+	float GetYar() const { return Yar; }
+	float GetYarRatio() const { return Yar / MaxYar; }
+	float GetPerfectDodgeAge() const;
+	void AddYar(float Amount) { Yar = FMath::Clamp(Yar + Amount, 0.f, MaxYar); }
+	UPROPERTY(EditAnywhere, Category = "Yar") float MaxYar = 100.f;
+	UPROPERTY(EditAnywhere, Category = "Yar") float YarPerDamage = 0.15f;
+	UPROPERTY(EditAnywhere, Category = "Yar") float YarRegen = 1.f;
+	UPROPERTY(EditAnywhere, Category = "Yar") float PerfectDodgeWindow = 0.2f;
+	UPROPERTY(EditAnywhere, Category = "Yar") float PerfectDodgeYar = 20.f;
+	UPROPERTY(EditAnywhere, Category = "Yar") float PerfectDodgeCooldown = 1.5f;
 	// Ability slots 1-4 (GDD §4: Yav — 3 skill-gem slots; slot 4 = ultimate, opens in Nav). Empty in the demo for now.
 	bool IsAbilitySlotOpen(int32 Slot) const { return Slot < 3; }
 	int32 GetKills() const;
@@ -165,6 +177,11 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
 private:
+	void OnAttackAvoided();
+	float Yar = 0.f;
+	double DodgeStartTime = -100.0;
+	double LastPerfectDodge = -100.0;
+	float PerfectSlowMo = 0.f;
 	void OnInteract();
 	void UpdateFocus();
 	void UpdateHelmet();

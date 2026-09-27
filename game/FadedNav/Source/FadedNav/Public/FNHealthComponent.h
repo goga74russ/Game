@@ -26,6 +26,9 @@ public:
 
 	bool bInvulnerable = false;
 
+	// Called when an attack that would have hit was avoided by invulnerability (perfect-dodge hook).
+	TFunction<void()> OnAvoided;
+
 	// Damage taken multiplier from passives (Increased/More, GDD §6).
 	float IncomingMultiplier = 1.f;
 

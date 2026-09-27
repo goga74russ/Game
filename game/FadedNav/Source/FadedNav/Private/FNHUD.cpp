@@ -688,6 +688,17 @@ void AFNHUD::DrawHUD()
 				}
 			}
 
+			// Yar: amber bar over the slots; flares after a perfect dodge.
+			{
+				const float YW = 4.f * Slot + 3.f * Gap, YY = SY - 9.f;
+				DrawRect(Ink, X0 * S, YY * S, YW * S, 5.f * S);
+				const float Flare = FMath::Clamp(1.f - Player->GetPerfectDodgeAge() / 0.6f, 0.f, 1.f);
+				FLinearColor YC = FMath::Lerp(Hex(TEXT("c8642a")), Hex(TEXT("ffd29a")), Flare);
+				DrawRect(YC, X0 * S, YY * S, YW * Player->GetYarRatio() * S, 5.f * S);
+				Txt(TEXT("ярь"), X0 - 6.f, YY - 7.f, Font(3, 13.f), BoneDim, EAlign::Right);
+				if (Flare > 0.f) { Txt(TEXT("точно!"), X0 + YW * 0.5f, YY - 26.f, Font(1, 18.f), Hex(TEXT("ffd29a"), Flare), EAlign::Center); }
+			}
+
 			const float BX = X0 + 4.f * Slot + 3.f * Gap + 16.f;
 			const float StY = H - 26.f - 6.f;     // stamina, bottom line
 			const float HY = StY - 4.f - 18.f;   // health above it

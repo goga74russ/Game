@@ -13,6 +13,10 @@ void UFNHealthComponent::BeginPlay()
 
 float UFNHealthComponent::ApplyDamage(float Amount, AActor* Instigator)
 {
+	if (bInvulnerable && !IsDead() && Amount > 0.f && OnAvoided)
+	{
+		OnAvoided();
+	}
 	if (IsDead() || bInvulnerable || Amount <= 0.f)
 	{
 		return 0.f;

@@ -14,6 +14,7 @@
 #include "FNGameMode.h"
 #include "FNMob.h"
 #include "FNRite.h"
+#include "Misc/App.h"
 #include "FNPerunBoss.h"
 #include "FNSkillTree.h"
 #include "Kismet/GameplayStatics.h"
@@ -137,6 +138,7 @@ void AFNCharacter::BeginPlay()
 	Checkpoint = GetActorLocation();
 	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), SparkColor); }
 	InitRetarget();
+	Health->OnAvoided = [this]() { OnAttackAvoided(); };
 	SparkLight->SetLightColor(SparkColor);
 
 	// The chapter starts as a Spark; the flat boss arena (?Arena) starts as full Flesh with the rifle.
@@ -301,6 +303,7 @@ void AFNCharacter::OnRoll()
 	}
 	Stamina -= Cost;
 	StaminaDelay = 0.8f;
+	DodgeStartTime = GetWorld()->GetTimeSeconds();
 
 	RollDirection = LastMoveInput.IsNearlyZero() ? GetActorForwardVector() : LastMoveInput;
 	RollDirection.Z = 0.f;
@@ -370,6 +373,7 @@ float AFNCharacter::GetTimeSinceHit() const
 
 void AFNCharacter::FireShot()
 {
+	if (!HasWeapon(Weapon)) { return; } // Skeleton before the first gun: melee only
 	switch (Weapon)
 	{
 	case EFNWeapon::Plasma:
@@ -439,8 +443,9 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 		if (UFNHealthComponent* TargetHealth = Hit.GetActor()->FindComponentByClass<UFNHealthComponent>())
 		{
 			const bool bWeak = Hit.GetComponent() && Hit.GetComponent()->ComponentHasTag(TEXT("WeakPoint"));
-			if (TargetHealth->ApplyDamage(Damage * TreeMods.Ranged * (bWeak ? WeakPointMultiplier * (1.f + TreeMods.Weak) : 1.f), this) > 0.f)
+			if (const float Dealt = TargetHealth->ApplyDamage(Damage * TreeMods.Ranged * (bWeak ? WeakPointMultiplier * (1.f + TreeMods.Weak) : 1.f), this); Dealt > 0.f)
 			{
+				AddYar(Dealt * YarPerDamage);
 				LastHitTime = GetWorld()->GetTimeSeconds();
 				bLastHitWeak = bWeak;
 				// "Раскат": a weak-point shot makes the creature flinch.
@@ -460,7 +465,7 @@ void AFNCharacter::CycleWeapon(int32 Dir)
 	for (int32 Step = 1; Step <= 3; ++Step)
 	{
 		const EFNWeapon Next = static_cast<EFNWeapon>((static_cast<int32>(Weapon) + Dir * Step + 3) % 3);
-		if (HasWeapon(Next))
+		if (HasWeapon(Next) && Next != Weapon)
 		{
 			SelectWeapon(Next);
 			return;
@@ -491,12 +496,13 @@ void AFNCharacter::SelectWeapon(EFNWeapon W)
 
 void AFNCharacter::GiveWeapon(EFNWeapon NewWeapon)
 {
-	if (NewWeapon == EFNWeapon::Rifle) { bHasRifle = true; ShowMessage(TEXT("Найдено ружьё  [2]")); }
-	if (NewWeapon == EFNWeapon::Scatter) { bHasScatter = true; ShowMessage(TEXT("Найден дробовик  [3]")); }
-	if (Stage != EFNStage::Spark)
-	{
-		Weapon = NewWeapon;
-	}
+	// One ranged weapon in hand; a second one found goes to the inventory (Q / wheel swaps them).
+	const bool bHadRanged = bHasRifle || bHasScatter;
+	if (NewWeapon == EFNWeapon::Rifle) { bHasRifle = true; }
+	if (NewWeapon == EFNWeapon::Scatter) { bHasScatter = true; }
+	const TCHAR* Name = NewWeapon == EFNWeapon::Rifle ? TEXT("Ружьё") : TEXT("Дробовик");
+	if (Stage != EFNStage::Spark && !bHadRanged) { Weapon = NewWeapon; ShowMessage(FString::Printf(TEXT("%s — в руке"), Name)); }
+	else { ShowMessage(FString::Printf(TEXT("%s — в инвентаре  (Q — сменить)"), Name)); }
 }
 
 void AFNCharacter::GiveArmor(float Bonus)
@@ -575,6 +581,7 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 		}
 	}
 
+	if (Stage != EFNStage::Spark && Weapon == EFNWeapon::Plasma) { Weapon = bHasRifle ? EFNWeapon::Rifle : EFNWeapon::Scatter; }
 	UpdateHelmet();
 	StageBaseHealth = BaseHealth;
 	StageBaseSpeed = Speed;
@@ -743,7 +750,9 @@ void AFNCharacter::OnMelee()
 			Damaged.Add(A);
 			if (UFNHealthComponent* H = A->FindComponentByClass<UFNHealthComponent>())
 			{
-				if (H->ApplyDamage(Damage * (1.f + TreeMods.Melee), this) > 0.f && TreeMods.MeleeHeal > 0.f)
+				const float Dealt = H->ApplyDamage(Damage * (1.f + TreeMods.Melee), this);
+				AddYar(Dealt * YarPerDamage);
+				if (Dealt > 0.f && TreeMods.MeleeHeal > 0.f)
 				{
 					Health->Health = FMath::Min(Health->MaxHealth, Health->Health + TreeMods.MeleeHeal);
 				}
@@ -801,6 +810,12 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	UpdateRetarget();
 	UpdateFocus();
+	AddYar(YarRegen * DeltaSeconds);
+	if (PerfectSlowMo > 0.f)
+	{
+		PerfectSlowMo -= FApp::GetDeltaTime(); // real time
+		if (PerfectSlowMo <= 0.f && !bTreeOpen) { UGameplayStatics::SetGlobalTimeDilation(this, 1.f); }
+	}
 	// Test key "-RiteTest": walks the two rite chains as Flesh and screenshots each step (UI review).
 	if (FParse::Param(FCommandLine::Get(), TEXT("RiteTest")))
 	{
@@ -1111,4 +1126,25 @@ void AFNCharacter::UpdateHelmet()
 {
 	if (HelmetOnFlesh) { HelmetOnFlesh->SetVisibility(bHelmet && GetMesh()->IsVisible()); }
 	if (HelmetOnBones) { HelmetOnBones->SetVisibility(bHelmet && SkeletonMesh->IsVisible()); }
+}
+
+float AFNCharacter::GetPerfectDodgeAge() const
+{
+	return GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds() - LastPerfectDodge) : 100.f;
+}
+
+void AFNCharacter::OnAttackAvoided()
+{
+	// Perfect dodge: an attack that would have hit arrives within the window after the dodge started (GDD §5).
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now - DodgeStartTime > PerfectDodgeWindow || Now - LastPerfectDodge < PerfectDodgeCooldown)
+	{
+		return;
+	}
+	LastPerfectDodge = Now;
+	AddYar(PerfectDodgeYar);
+	// A beat of slow motion so the player feels it.
+	UGameplayStatics::SetGlobalTimeDilation(this, 0.3f);
+	PerfectSlowMo = 0.15f;
+	SparkLight->SetIntensity(SparkLight->Intensity + 20000.f);
 }
