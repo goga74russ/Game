@@ -19,7 +19,7 @@ enum class EFNStage : uint8 { Spark, Skeleton, Flesh };
 UENUM()
 enum class EFNWeapon : uint8 { Plasma, Rifle, Scatter };
 
-// Hero: Spark (plasma, blink) -> Skeleton (dash) -> Flesh (roll, full kit): over-the-shoulder camera, hitscan rifle, roll with i-frames, melee.
+// Hero: Spark -> Skeleton -> Flesh. Fixed isometric camera, screen-relative WASD and cursor-directed combat.
 UCLASS()
 class FADEDNAV_API AFNCharacter : public ACharacter
 {
@@ -40,7 +40,7 @@ public:
 	bool IsReloading() const { return bReloading; }
 	float GetStaminaRatio() const { return Stamina / MaxStamina; }
 	bool IsDead() const { return bDead; }
-	bool IsAiming() const { return bAiming; }
+	bool IsFiring() const { return bWantsFire; }
 	float GetTimeSinceHit() const;
 	bool WasLastHitWeak() const { return bLastHitWeak; }
 
@@ -125,6 +125,14 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Evolution") FLinearColor SparkColor = FLinearColor(FColor::FromHex(TEXT("8FA8FF"))) /* Perun: cold blue-violet, docs/art/skills rune dictionary (director 2026-09-27) */;
 
 	// --- Tunables [D] = placeholder until playtest ---
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float IsometricPitch = -55.f;
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float IsometricYaw = -45.f;
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float IsometricDistance = 2100.f;
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float IsometricFOV = 50.f;
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float MinCameraDistance = 1300.f;
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float MaxCameraDistance = 3000.f;
+	UPROPERTY(EditAnywhere, Category = "Camera|Isometric") float CameraZoomStep = 180.f;
+	UPROPERTY(EditAnywhere, Category = "Weapon") float CursorAimHeight = 90.f;
 	UPROPERTY(EditAnywhere, Category = "Weapon") float ShotDamage = 25.f;
 	UPROPERTY(EditAnywhere, Category = "Weapon") float WeakPointMultiplier = 1.6f;
 	UPROPERTY(EditAnywhere, Category = "Weapon") float FireInterval = 0.12f;
@@ -170,16 +178,13 @@ protected:
 	// Input assets are built in code so the tech test needs no editor setup.
 	UPROPERTY() TObjectPtr<UInputMappingContext> Mapping;
 	UPROPERTY() TObjectPtr<UInputAction> MoveAction;
-	UPROPERTY() TObjectPtr<UInputAction> LookAction;
+	UPROPERTY() TObjectPtr<UInputAction> ZoomAction;
 	UPROPERTY() TObjectPtr<UInputAction> FireAction;
-	UPROPERTY() TObjectPtr<UInputAction> AimAction;
 	UPROPERTY() TObjectPtr<UInputAction> RollAction;
 	UPROPERTY() TObjectPtr<UInputAction> ReloadAction;
 	UPROPERTY() TObjectPtr<UInputAction> MeleeAction;
 	UPROPERTY() TObjectPtr<UInputAction> RestartAction;
 	UPROPERTY() TObjectPtr<UInputAction> Weapon1Action;
-	UPROPERTY() TObjectPtr<UInputAction> Weapon2Action;
-	UPROPERTY() TObjectPtr<UInputAction> Weapon3Action;
 	UPROPERTY() TObjectPtr<UInputAction> AbilityActions[4];
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 
@@ -187,6 +192,24 @@ private:
 	bool CastSkill(int32 SkillId);
 	void YarFromHit(const class UFNHealthComponent* Target, float Dealt, const AActor* Victim);
 	FVector AimPoint(float MaxRange) const;
+	bool CursorRay(FVector& Origin, FVector& Direction) const;
+	void CursorWorldPoints(FVector& Ground, FVector& Target) const;
+	void UpdateCursorAim();
+	FVector MuzzleLocation() const;
+	bool TraceCursorShot(float Range, float SpreadDeg, FHitResult& Hit, FVector& End) const;
+	void ConfigureCursorInput();
+	void RunIsometricSmokeTest();
+	float DesiredCameraDistance = 2100.f;
+	// A projected test pointer exercises the same deprojection/targeting path without moving the OS cursor.
+	bool bTestCursor = false;
+	FVector2D TestCursorScreen = FVector2D::ZeroVector;
+	int32 IsometricTestStep = 0;
+	int32 IsometricTestFailures = 0;
+	float IsometricTestNextTime = 5.f;
+	FVector IsometricTestStart = FVector::ZeroVector;
+	float IsometricTestHealth = 0.f;
+	TWeakObjectPtr<AActor> IsometricTestTarget;
+	TWeakObjectPtr<AActor> IsometricTestWall;
 	TArray<int32> OwnedSkills;
 	int32 Panel[3] = { -1, -1, -1 };
 	float SkillCooldown[8] = {};
@@ -214,12 +237,11 @@ private:
 	void BuildInput();
 
 	void OnMove(const FInputActionValue& Value);
-	void OnLook(const FInputActionValue& Value);
-	// LMB: melee by default; ranged only while aiming with RMB (director, 2026-09-26).
-	void OnFireStarted() { if (bAiming) { bWantsFire = true; } else { OnMelee(); } }
+	void OnMoveStopped() { LastMoveInput = FVector::ZeroVector; }
+	void OnZoom(const FInputActionValue& Value);
+	// Isometric controls: LMB ranged (unarmed falls back to melee), RMB melee.
+	void OnFireStarted() { if (!bDead && !bTreeOpen) { if (HasRangedWeapon()) { bWantsFire = true; } else { OnMelee(); } } }
 	void OnFireStopped() { bWantsFire = false; }
-	void OnAimStarted() { bAiming = true; }
-	void OnAimStopped() { bAiming = false; bWantsFire = false; }
 	void OnRoll();
 	void OnReload();
 	void OnMelee();
@@ -229,8 +251,6 @@ private:
 	void FireTrace(float Damage, float SpreadDeg, float Range, const FColor& Tracer);
 	void SelectWeapon(EFNWeapon W);
 	void OnWeapon1() { CycleWeapon(+1); }
-	void OnWeapon2() { CycleWeapon(-1); }
-	void OnWeapon3() { CycleWeapon(+1); }
 	void CycleWeapon(int32 Dir);
 	void OnAbility(int32 Slot);
 	void SetStage(EFNStage NewStage, bool bAnnounce);
@@ -246,7 +266,6 @@ private:
 	float ReloadRemaining = 0.f;
 	bool bWantsFire = false;
 	float FireCooldown = 0.f;
-	bool bAiming = false;
 
 	float Stamina = 100.f;
 	float StaminaDelay = 0.f;

@@ -635,18 +635,20 @@ void AFNHUD::DrawHUD()
 
 	if (GetWorld()->GetTimeSeconds() < 15.0)
 	{
-		Txt(TEXT("WASD — ход   ·   ЛКМ — удар   ·   ПКМ+ЛКМ — выстрел   ·   Пробел — уклонение   ·   R — перезарядка   ·   Колесо/Q — оружие   ·   1–4 — способности   ·   Tab — древо"),
+		Txt(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо"),
 			W * 0.5f, 604.f, Font(3, 15.f), BoneDim, EAlign::Center);
 	}
 
 	if (Player)
 	{
-		// ---- Crosshair: thin ring with four ticks; tightens when aiming, warms on hit, gold ring on a weak point.
+		// ---- The combat reticle follows the screen cursor, not the centre of the isometric camera.
 		{
 			const bool bHit = Player->GetTimeSinceHit() < 0.12f;
 			const FLinearColor C = bHit ? (Player->WasLastHitWeak() ? Hex(TEXT("ffb35c")) : BloodHi) : Hex(TEXT("e8dfc8"), 0.8f);
-			const float CX = W * 0.5f, CY = H * 0.5f;
-			const float R = Player->IsAiming() ? 8.f : 11.f;
+			float MouseX = Canvas->ClipX * 0.5f, MouseY = Canvas->ClipY * 0.5f;
+			if (APlayerController* PC = GetOwningPlayerController()) { PC->GetMousePosition(MouseX, MouseY); }
+			const float CX = MouseX / S, CY = MouseY / S;
+			const float R = Player->IsFiring() ? 8.f : 11.f;
 			DrawRing(CX, CY, R, C, 1.2f);
 			FillDisc(CX, CY, 1.6f, C);
 			for (int32 i = 0; i < 4; ++i)
@@ -844,7 +846,7 @@ void AFNHUD::DrawHUD()
 
 			// Key hints under the icon.
 			float KX = RX;
-			for (const TCHAR* K : { TEXT("колесо"), TEXT("Q") })
+			for (const TCHAR* K : { TEXT("Q") })
 			{
 				float KW = 0.f, KH = 0.f;
 				GetTextSize(K, KW, KH, Font(2, 13.f));
