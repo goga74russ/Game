@@ -104,11 +104,11 @@ struct FFNHeroAnimProxy : public FAnimInstanceProxy
 			Sample(Action, ActionTime, FullBody);
 			// Foreign clips have no Wraith rifle track. Keep the integrated
 			// rifle at its reference grip relative to the animated right hand.
-			for (int32 Side = 0; Side < 2; ++Side)
+			for (int32 Side = 0; Side < 3; ++Side)
 			{
 				const FBoneContainer& Bones = FullBody.Pose.GetBoneContainer();
-				const FCompactPoseBoneIndex Weapon = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Bones.GetPoseBoneIndexForBoneName(Side == 0 ? TEXT("weapon_r") : TEXT("weapon_l"))));
-				const FCompactPoseBoneIndex Hand = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Bones.GetPoseBoneIndexForBoneName(Side == 0 ? TEXT("hand_r") : TEXT("hand_l"))));
+				const FCompactPoseBoneIndex Weapon = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Bones.GetPoseBoneIndexForBoneName(Side == 0 ? TEXT("weapon_r") : Side == 1 ? TEXT("weapon_l") : TEXT("canon_gun"))));
+				const FCompactPoseBoneIndex Hand = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Bones.GetPoseBoneIndexForBoneName(Side == 1 ? TEXT("hand_l") : TEXT("hand_r"))));
 				if (Weapon.IsValid() && Hand.IsValid())
 				{
 					auto RefComponent = [&Bones](FCompactPoseBoneIndex Index)
