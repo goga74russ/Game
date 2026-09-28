@@ -48,20 +48,27 @@ AFNCharacter::AFNCharacter()
 	GetCapsuleComponent()->InitCapsuleSize(40.f, 90.f);
 	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
 
-	// Shooter control: character faces where the camera looks.
-	bUseControllerRotationYaw = true;
+	// The character follows the cursor; the camera retains its world-space rotation.
+	bUseControllerRotationYaw = false;
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	GetCharacterMovement()->MaxWalkSpeed = DefaultWalkSpeed;
 
 	Boom = CreateDefaultSubobject<USpringArmComponent>(TEXT("Boom"));
 	Boom->SetupAttachment(RootComponent);
-	Boom->TargetArmLength = 320.f;
-	Boom->SocketOffset = FVector(0.f, 65.f, 70.f); // over the right shoulder
-	Boom->bUsePawnControlRotation = true;
+	Boom->SetUsingAbsoluteRotation(true);
+	Boom->SetRelativeRotation(FRotator(IsometricPitch, IsometricYaw, 0.f));
+	Boom->TargetArmLength = IsometricDistance;
+	Boom->TargetOffset = FVector(0.f, 0.f, 40.f);
+	Boom->bUsePawnControlRotation = false;
+	Boom->bDoCollisionTest = false; // fixed composition: props must not pull the camera into the hero
+	Boom->bEnableCameraLag = true;
+	Boom->CameraLagSpeed = 12.f;
+	Boom->CameraLagMaxDistance = 100.f;
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(Boom, USpringArmComponent::SocketName);
 	Camera->bUsePawnControlRotation = false;
+	Camera->SetFieldOfView(IsometricFOV);
 
 	auto MakePart = [this](const TCHAR* Name, UStaticMesh* PartMesh, const FVector& Loc, const FVector& Scale)
 	{
@@ -132,6 +139,10 @@ AFNCharacter::AFNCharacter()
 void AFNCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	DesiredCameraDistance = FMath::Clamp(IsometricDistance, MinCameraDistance, MaxCameraDistance);
+	Boom->TargetArmLength = DesiredCameraDistance;
+	Boom->SetWorldRotation(FRotator(IsometricPitch, IsometricYaw, 0.f));
+	Camera->SetFieldOfView(IsometricFOV);
 	Ammo = MagazineSize;
 	Stamina = MaxStamina;
 	DefaultWalkSpeed = GetCharacterMovement()->MaxWalkSpeed;
@@ -194,9 +205,8 @@ void AFNCharacter::BuildInput()
 		return A;
 	};
 	MoveAction = MakeAction(EInputActionValueType::Axis2D);
-	LookAction = MakeAction(EInputActionValueType::Axis2D);
+	ZoomAction = MakeAction(EInputActionValueType::Axis1D);
 	FireAction = MakeAction(EInputActionValueType::Boolean);
-	AimAction = MakeAction(EInputActionValueType::Boolean);
 	RollAction = MakeAction(EInputActionValueType::Boolean);
 	ReloadAction = MakeAction(EInputActionValueType::Boolean);
 	MeleeAction = MakeAction(EInputActionValueType::Boolean);
@@ -221,19 +231,15 @@ void AFNCharacter::BuildInput()
 	MapMove(EKeys::A, false, true);
 	MapMove(EKeys::D, false, false);
 
-	Mapping->MapKey(LookAction, EKeys::Mouse2D);
+	Mapping->MapKey(ZoomAction, EKeys::MouseWheelAxis);
 	Mapping->MapKey(FireAction, EKeys::LeftMouseButton);
-	Mapping->MapKey(AimAction, EKeys::RightMouseButton);
+	Mapping->MapKey(MeleeAction, EKeys::RightMouseButton);
 	Mapping->MapKey(RollAction, EKeys::SpaceBar);
 	Mapping->MapKey(ReloadAction, EKeys::R);
 	Mapping->MapKey(RestartAction, EKeys::Enter);
 	Weapon1Action = MakeAction(EInputActionValueType::Boolean);
-	Weapon2Action = MakeAction(EInputActionValueType::Boolean);
-	Weapon3Action = MakeAction(EInputActionValueType::Boolean);
-	// Weapons: mouse wheel and Q (keys 1-4 are ability slots).
-	Mapping->MapKey(Weapon1Action, EKeys::MouseScrollUp);
-	Mapping->MapKey(Weapon2Action, EKeys::MouseScrollDown);
-	Mapping->MapKey(Weapon3Action, EKeys::Q);
+	// The wheel zooms the camera; Q cycles the existing weapons.
+	Mapping->MapKey(Weapon1Action, EKeys::Q);
 	const FKey AbilityKeys[4] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four };
 	for (int32 i = 0; i < 4; ++i)
 	{
@@ -266,23 +272,24 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 
 	UEnhancedInputComponent* Input = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
 	Input->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AFNCharacter::OnMove);
-	Input->BindAction(LookAction, ETriggerEvent::Triggered, this, &AFNCharacter::OnLook);
+	Input->BindAction(MoveAction, ETriggerEvent::Completed, this, &AFNCharacter::OnMoveStopped);
+	Input->BindAction(MoveAction, ETriggerEvent::Canceled, this, &AFNCharacter::OnMoveStopped);
+	Input->BindAction(ZoomAction, ETriggerEvent::Triggered, this, &AFNCharacter::OnZoom);
 	Input->BindAction(FireAction, ETriggerEvent::Started, this, &AFNCharacter::OnFireStarted);
 	Input->BindAction(FireAction, ETriggerEvent::Completed, this, &AFNCharacter::OnFireStopped);
-	Input->BindAction(AimAction, ETriggerEvent::Started, this, &AFNCharacter::OnAimStarted);
-	Input->BindAction(AimAction, ETriggerEvent::Completed, this, &AFNCharacter::OnAimStopped);
+	Input->BindAction(FireAction, ETriggerEvent::Canceled, this, &AFNCharacter::OnFireStopped);
+	Input->BindAction(MeleeAction, ETriggerEvent::Started, this, &AFNCharacter::OnMelee);
 	Input->BindAction(RollAction, ETriggerEvent::Started, this, &AFNCharacter::OnRoll);
 	Input->BindAction(ReloadAction, ETriggerEvent::Started, this, &AFNCharacter::OnReload);
 	Input->BindAction(RestartAction, ETriggerEvent::Started, this, &AFNCharacter::OnRestart);
 	Input->BindAction(Weapon1Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon1);
-	Input->BindAction(Weapon2Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon2);
-	Input->BindAction(Weapon3Action, ETriggerEvent::Started, this, &AFNCharacter::OnWeapon3);
 	for (int32 i = 0; i < 4; ++i)
 	{
 		Input->BindAction(AbilityActions[i], ETriggerEvent::Started, this, &AFNCharacter::OnAbility, i);
 	}
 	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
 	Input->BindAction(InteractAction, ETriggerEvent::Started, this, &AFNCharacter::OnInteract);
+	ConfigureCursorInput();
 }
 
 void AFNCharacter::OnMove(const FInputActionValue& Value)
@@ -292,7 +299,7 @@ void AFNCharacter::OnMove(const FInputActionValue& Value)
 		return;
 	}
 	const FVector2D Axis = Value.Get<FVector2D>();
-	const FRotator Yaw(0.f, Controller->GetControlRotation().Yaw, 0.f);
+	const FRotator Yaw(0.f, Boom->GetComponentRotation().Yaw, 0.f);
 	const FVector Forward = FRotationMatrix(Yaw).GetUnitAxis(EAxis::X);
 	const FVector Right = FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y);
 	LastMoveInput = (Forward * Axis.Y + Right * Axis.X).GetSafeNormal();
@@ -300,16 +307,26 @@ void AFNCharacter::OnMove(const FInputActionValue& Value)
 	AddMovementInput(Right, Axis.X);
 }
 
-void AFNCharacter::OnLook(const FInputActionValue& Value)
+void AFNCharacter::OnZoom(const FInputActionValue& Value)
 {
-	if (bTreeOpen)
+	if (bTreeOpen) { return; } // the tree handles its own zoom
+	DesiredCameraDistance = FMath::Clamp(DesiredCameraDistance - Value.Get<float>() * CameraZoomStep, MinCameraDistance, MaxCameraDistance);
+}
+
+void AFNCharacter::ConfigureCursorInput()
+{
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
 	{
-		return;
+		PC->bShowMouseCursor = true;
+		PC->DefaultMouseCursor = bTreeOpen ? EMouseCursor::Default : EMouseCursor::None;
+		PC->CurrentMouseCursor = PC->DefaultMouseCursor;
+		PC->bEnableClickEvents = bTreeOpen;
+		PC->bEnableMouseOverEvents = bTreeOpen;
+		FInputModeGameAndUI Mode;
+		Mode.SetHideCursorDuringCapture(false);
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
+		PC->SetInputMode(Mode);
 	}
-	const FVector2D Axis = Value.Get<FVector2D>();
-	const float Sensitivity = bAiming ? 0.5f : 1.f;
-	AddControllerYawInput(Axis.X * Sensitivity);
-	AddControllerPitchInput(-Axis.Y * Sensitivity);
 }
 
 void AFNCharacter::OnRoll()
@@ -417,7 +434,7 @@ void AFNCharacter::FireShot()
 		if (Ammo <= 0) { OnReload(); return; }
 		--Ammo;
 		FireCooldown = FireInterval / TreeMods.FireRate;
-		FireTrace(ShotDamage, bAiming ? AimSpreadDeg : HipSpreadDeg, 20000.f, FColor(255, 190, 90));
+		FireTrace(ShotDamage, AimSpreadDeg, 20000.f, FColor(255, 190, 90));
 		break;
 	}
 
@@ -435,18 +452,10 @@ void AFNCharacter::FireShot()
 
 void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const FColor& Tracer)
 {
-	FVector ViewLoc;
-	FRotator ViewRot;
-	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
-
-	const FVector Dir = FMath::VRandCone(ViewRot.Vector(), FMath::DegreesToRadians(SpreadDeg));
-	const FVector End = ViewLoc + Dir * Range;
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(FNShot), false, this);
 	FHitResult Hit;
-	const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, ViewLoc, End, ECC_Visibility, Params);
-
-	const FVector Muzzle = Stage == EFNStage::Spark ? SparkOrb->GetComponentLocation() : Gun->GetComponentLocation() + GetActorForwardVector() * 50.f;
+	FVector End;
+	const bool bHit = TraceCursorShot(Range, SpreadDeg, Hit, End);
+	const FVector Muzzle = MuzzleLocation();
 	const FVector Impact = bHit ? Hit.ImpactPoint : End;
 	DrawDebugLine(GetWorld(), Muzzle, Impact, Tracer, false, 0.05f, 0, 1.2f);
 
@@ -695,21 +704,10 @@ void AFNCharacter::ToggleTree()
 	}
 	bTreeOpen = !bTreeOpen;
 	bWantsFire = false;
+	LastMoveInput = FVector::ZeroVector;
 	// Time nearly stops (not a hard pause, so HUD hit boxes and input keep working).
 	UGameplayStatics::SetGlobalTimeDilation(this, bTreeOpen ? 0.02f : 1.f);
-	PC->bShowMouseCursor = bTreeOpen;
-	PC->bEnableClickEvents = bTreeOpen;
-	PC->bEnableMouseOverEvents = bTreeOpen;
-	if (bTreeOpen)
-	{
-		FInputModeGameAndUI Mode;
-		Mode.SetHideCursorDuringCapture(false);
-		PC->SetInputMode(Mode);
-	}
-	else
-	{
-		PC->SetInputMode(FInputModeGameOnly());
-	}
+	ConfigureCursorInput();
 }
 
 void AFNCharacter::ReviveAt(const FVector& At)
@@ -837,6 +835,11 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 void AFNCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (!bDead && !bTreeOpen && !bRolling) { UpdateCursorAim(); }
+	Boom->SetWorldRotation(FRotator(IsometricPitch, IsometricYaw, 0.f));
+	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, DesiredCameraDistance, DeltaSeconds, 8.f);
+	Camera->SetFieldOfView(IsometricFOV);
+	if (FParse::Param(FCommandLine::Get(), TEXT("IsometricTest"))) { RunIsometricSmokeTest(); }
 	UpdateRetarget();
 	UpdateFocus();
 	{
@@ -1047,12 +1050,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 		if (FlinchRemaining <= 0.f) { Camera->SetRelativeLocation(FVector::ZeroVector); }
 	}
 
-	// Aim: tighter camera, slower walk.
-	const float TargetFOV = bAiming ? 60.f : 90.f;
-	const float TargetArm = bAiming ? 190.f : 320.f;
-	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFOV, DeltaSeconds, 12.f));
-	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, TargetArm, DeltaSeconds, 12.f);
-	GetCharacterMovement()->MaxWalkSpeed = bAiming ? DefaultWalkSpeed * 0.6f : DefaultWalkSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = DefaultWalkSpeed;
 }
 
 void AFNCharacter::InitRetarget()
@@ -1274,16 +1272,84 @@ void AFNCharacter::YarFromHit(const UFNHealthComponent* Target, float Dealt, con
 
 FVector AFNCharacter::AimPoint(float MaxRange) const
 {
-	const FVector From = Camera->GetComponentLocation();
-	const FVector To = From + Camera->GetForwardVector() * (MaxRange + 600.f);
-	FHitResult Hit;
+	FVector P, Target;
+	CursorWorldPoints(P, Target);
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(FNAimPoint), false, this);
-	FVector P = GetWorld()->LineTraceSingleByChannel(Hit, From, To, ECC_Visibility, Q) ? Hit.ImpactPoint : To;
 	const FVector Me = GetActorLocation();
 	if (FVector::Dist2D(P, Me) > MaxRange) { P = Me + (P - Me).GetSafeNormal2D() * MaxRange; }
 	// Drop onto the ground.
+	FHitResult Hit;
 	if (GetWorld()->LineTraceSingleByChannel(Hit, P + FVector(0, 0, 1500.f), P - FVector(0, 0, 3000.f), ECC_WorldStatic, Q)) { P = Hit.ImpactPoint; }
 	return P;
+}
+
+bool AFNCharacter::CursorRay(FVector& Origin, FVector& Direction) const
+{
+	const APlayerController* PC = Cast<APlayerController>(Controller);
+	if (!PC) { return false; }
+	if (bTestCursor) { return PC->DeprojectScreenPositionToWorld(TestCursorScreen.X, TestCursorScreen.Y, Origin, Direction); }
+	return PC->DeprojectMousePositionToWorld(Origin, Direction);
+}
+
+void AFNCharacter::CursorWorldPoints(FVector& Ground, FVector& Target) const
+{
+	const FVector Me = GetActorLocation();
+	Ground = Me + GetActorForwardVector() * 600.f - FVector(0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	FVector Origin, Direction;
+	if (CursorRay(Origin, Direction))
+	{
+		FHitResult Hit;
+		const FCollisionQueryParams Q(SCENE_QUERY_STAT(FNCursor), false, this);
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * 100000.f, ECC_Visibility, Q))
+		{
+			Ground = Hit.ImpactPoint;
+			Target = Ground;
+			// Ground clicks aim at body height. Direct enemy/weak-point hits keep their exact height.
+			if ((!Hit.GetActor() || !Hit.GetActor()->FindComponentByClass<UFNHealthComponent>()) && Hit.ImpactNormal.Z > 0.5f)
+			{
+				Target.Z += CursorAimHeight;
+			}
+			return;
+		}
+		// Empty sky/edges: intersect the hero's ground plane instead of aiming along the camera.
+		if (Direction.Z < -KINDA_SMALL_NUMBER)
+		{
+			const float T = (Me.Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - Origin.Z) / Direction.Z;
+			if (T > 0.f) { Ground = Origin + Direction * T; }
+		}
+	}
+	Target = Ground + FVector(0.f, 0.f, CursorAimHeight);
+}
+
+void AFNCharacter::UpdateCursorAim()
+{
+	FVector Ground, Target;
+	CursorWorldPoints(Ground, Target);
+	const FVector Direction = Target - GetActorLocation();
+	if (!Direction.IsNearlyZero() && !Direction.GetSafeNormal2D().IsNearlyZero())
+	{
+		const FRotator Aim = Direction.Rotation();
+		SetActorRotation(FRotator(0.f, Aim.Yaw, 0.f));
+		if (Controller) { Controller->SetControlRotation(Aim); }
+	}
+}
+
+FVector AFNCharacter::MuzzleLocation() const
+{
+	return Stage == EFNStage::Spark ? SparkOrb->GetComponentLocation() : Gun->GetComponentLocation() + GetActorForwardVector() * 50.f;
+}
+
+bool AFNCharacter::TraceCursorShot(float Range, float SpreadDeg, FHitResult& Hit, FVector& End) const
+{
+	FVector Ground, Target;
+	CursorWorldPoints(Ground, Target);
+	const FVector Muzzle = MuzzleLocation();
+	FVector Direction = (Target - Muzzle).GetSafeNormal();
+	if (Direction.IsNearlyZero()) { Direction = GetActorForwardVector(); }
+	if (SpreadDeg > 0.f) { Direction = FMath::VRandCone(Direction, FMath::DegreesToRadians(SpreadDeg)); }
+	End = Muzzle + Direction * Range;
+	// Trace from the weapon: an overhead cursor must never allow shooting through a wall.
+	return GetWorld()->LineTraceSingleByChannel(Hit, Muzzle, End, ECC_Visibility, FCollisionQueryParams(SCENE_QUERY_STAT(FNCursorShot), false, this));
 }
 
 bool AFNCharacter::CastSkill(int32 SkillId)
@@ -1381,9 +1447,8 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 			Mag -= D.AmmoCost;
 		}
 		FHitResult Hit;
-		const FVector From = Camera->GetComponentLocation();
-		FCollisionQueryParams Q(SCENE_QUERY_STAT(FNChain), false, this);
-		AActor* Cur = W->LineTraceSingleByChannel(Hit, From, From + Camera->GetForwardVector() * D.RangeCm, ECC_Visibility, Q) ? Hit.GetActor() : nullptr;
+		FVector End;
+		AActor* Cur = TraceCursorShot(D.RangeCm, 0.f, Hit, End) ? Hit.GetActor() : nullptr;
 		FVector Prev = Me;
 		float Damage = ShotDamage * D.Damage * TreeMods.Ranged;
 		TSet<AActor*> Done;
@@ -1406,7 +1471,7 @@ bool AFNCharacter::CastSkill(int32 SkillId)
 			}
 			Cur = Next;
 		}
-		if (Done.Num() == 0) { DrawDebugLine(W, Me, From + Camera->GetForwardVector() * 1500.f, FColor(150, 170, 255), false, 0.15f, 0, 3.f); }
+		if (Done.Num() == 0) { DrawDebugLine(W, MuzzleLocation(), Hit.bBlockingHit ? Hit.ImpactPoint : End, FColor(150, 170, 255), false, 0.15f, 0, 3.f); }
 		return true;
 	}
 	case EFNSkillId::StormWard:
