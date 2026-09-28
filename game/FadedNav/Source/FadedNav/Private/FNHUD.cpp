@@ -692,7 +692,7 @@ void AFNHUD::DrawHUD()
 	const float Time = GetWorld()->GetRealTimeSeconds();
 
 	AFNCharacter* Player = Cast<AFNCharacter>(GetOwningPawn());
-	if (Player && Player->IsInventoryOpen())
+	if (Player && Player->HasSatchel() && Player->IsInventoryOpen())
     {
         if (!bInventoryWasOpen) { InventoryScreen.Reset(); }
         bInventoryWasOpen = true;
@@ -737,7 +737,7 @@ void AFNHUD::DrawHUD()
 
 	if (GetWorld()->GetTimeSeconds() < 15.0)
 	{
-		Txt(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо   ·   M — карта   ·   I — сумка"),
+		Txt(FString(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо   ·   M — карта")) + (Player && Player->HasSatchel() ? TEXT("   ·   I — сумка") : TEXT("")),
 			W * 0.5f, 604.f, Font(3, 15.f), BoneDim, EAlign::Center);
 	}
 
@@ -1023,7 +1023,7 @@ void AFNHUD::DrawHUD()
 		}
 
 		// ---- Satchel (rite items), above the Spark emblem.
-		if (Player->GetSatchel().Num() > 0)
+		if (Player->HasSatchel() && Player->GetSatchel().Num() > 0)
 		{
 			float SY = H - 30.f - 72.f - 26.f - 20.f * Player->GetSatchel().Num();
 			Txt(TEXT("сума"), 30.f, SY, Font(3, 14.f), BoneDim);

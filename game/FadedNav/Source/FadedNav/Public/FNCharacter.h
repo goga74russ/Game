@@ -103,8 +103,10 @@ public:
 	void FindRune(int32 Node);
 
 	// Satchel for rite items (secrets_v0.1: 6 slots [D], no weight, kept on death).
+	bool HasSatchel() const { return bHasSatchel && Stage != EFNStage::Spark; }
+	void GiveSatchel() { if (Stage != EFNStage::Spark) { bHasSatchel = true; } }
 	bool HasItem(FName Item) const { return Satchel.Contains(Item); }
-	bool IsSatchelFull() const { return Satchel.Num() >= SatchelSize; }
+	bool IsSatchelFull() const { return !HasSatchel() || Satchel.Num() >= SatchelSize; }
 	void AddItem(FName Item) { if (!IsSatchelFull()) { Satchel.Add(Item); } }
 	void RemoveItem(FName Item) { Satchel.RemoveSingle(Item); }
 	const TArray<FName>& GetSatchel() const { return Satchel; }
@@ -250,6 +252,7 @@ private:
 	void UpdateFocus();
 	void UpdateHelmet();
 	TArray<FName> Satchel;
+	bool bHasSatchel = false;
 	FString SubSpeaker, SubText;
 	double SubTime = -100.0;
 	bool bHelmet = false;

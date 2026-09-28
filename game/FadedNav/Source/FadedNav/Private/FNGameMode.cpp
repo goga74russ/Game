@@ -280,6 +280,18 @@ void AFNGameMode::SpawnRites()
 	};
 	const uint8 Hands = FNStage::Skeleton | FNStage::Flesh;
 
+    // Belt and kalita: inventory starts when the embodied hero accepts it.
+    {
+        FFNRiteStep S;
+        S.Name = TEXT("Дед с поясом"); S.Action = TEXT("принять пояс");
+        S.Verb = EFNVerb::Take; S.Stages = Hands;
+        S.RefuseSpark = TEXT("Искре нечем опоясаться");
+        S.Reward = EFNRiteReward::Satchel;
+        S.DoneText = TEXT("Неопоясанным ходить не след. Дед повязал пояс с калитой. I — сумка.");
+        Spawn(195.f, 36.f, 180.f, S, EFNRiteLook::Elder);
+    }
+
+
 	// ---- Tutorial "Что с неба": the arrow-digger elder in Strelokopni (lines: vysi_secrets_v0.1, status Пр.).
 	{
 		FFNRiteStep S;

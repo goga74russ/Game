@@ -165,6 +165,9 @@ void AFNRiteObject::GiveReward(AFNCharacter* Hero)
 		}
 		Hero->GiveHelmet();
 		break;
+	case EFNRiteReward::Satchel:
+		Hero->GiveSatchel();
+		break;
 	case EFNRiteReward::StrelokopCache:
 	{
 		// The cellar opens: the dead arrow-digger's thing (wax gold = loot channel).

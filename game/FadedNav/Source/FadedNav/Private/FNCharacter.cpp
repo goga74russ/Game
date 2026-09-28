@@ -612,6 +612,7 @@ float AFNCharacter::GetMessageAge() const
 void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 {
 	Stage = NewStage;
+	if (Stage == EFNStage::Spark && bInventoryOpen) { CloseMenus(); }
 	const bool bHasSkin = GetMesh()->GetSkeletalMeshAsset() != nullptr;
 
 	float BaseHealth = 100.f;
@@ -738,7 +739,7 @@ void AFNCharacter::ApplyStats()
 
 bool AFNCharacter::CanEditLoadout() const
 {
-    if (bDead || !GetWorld()) { return false; }
+    if (bDead || !HasSatchel() || !GetWorld()) { return false; }
     for (TActorIterator<AFNTreba> It(GetWorld()); It; ++It)
     {
         if (FVector::Dist2D(GetActorLocation(), It->GetActorLocation()) < 350.f) { return true; }
@@ -773,7 +774,7 @@ void AFNCharacter::CloseMenus()
 
 void AFNCharacter::ToggleInventory()
 {
-    if (!Controller || bDead || bRolling || MeleeHitRemaining >= 0.f || bTreeOpen || bMapOpen) { return; }
+    if (!Controller || bDead || !HasSatchel() || bRolling || MeleeHitRemaining >= 0.f || bTreeOpen || bMapOpen) { return; }
     bInventoryOpen = !bInventoryOpen;
     bWantsFire = false;
     LastMoveInput = FVector::ZeroVector;

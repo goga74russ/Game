@@ -1,6 +1,7 @@
 #include "FNCharacter.h"
 #include "FNHealthComponent.h"
 #include "FNTreba.h"
+#include "FNRite.h"
 #include "FNMob.h"
 #include "FNPerunBoss.h"
 #include "NiagaraComponent.h"
@@ -44,7 +45,19 @@ void AFNCharacter::TickInventorySmokeTest()
             }
         }
         ToggleInventory();
-        Check(bInventoryOpen, TEXT("Open inventory"));
+        Check(!bInventoryOpen && !HasSatchel(), TEXT("Spark has no inventory"));
+        GiveSatchel();
+        Check(!bHasSatchel, TEXT("Spark cannot receive bag"));
+        SetStage(EFNStage::Skeleton, false);
+        ToggleInventory();
+        Check(!bInventoryOpen && !HasSatchel(), TEXT("Skeleton without bag has no inventory"));
+        for (TActorIterator<AFNRiteObject> It(GetWorld()); It; ++It) {
+            bool Can = false;
+            if (It->GetPrompt(this, Can).Contains(TEXT("принять пояс"))) { It->Use(this); break; }
+        }
+        Check(HasSatchel(), TEXT("Belt interaction gives bag"));
+        ToggleInventory();
+        Check(bInventoryOpen, TEXT("Open inventory after bag"));
         Check(!CanEditLoadout(), TEXT("Away from treba"));
         Check(!ApplyInventoryPanel({4, 3, 2}, Error), TEXT("Reject away from treba"));
         OnFireStarted();
@@ -73,11 +86,16 @@ void AFNCharacter::TickInventorySmokeTest()
         CloseMenus();
         SetStage(EFNStage::Skeleton, false);
         Check(SparkFX && !SparkFX->IsActive(), TEXT("Skeleton disables Spark"));
+        ToggleInventory();
         SetStage(EFNStage::Spark, false);
+        Check(!bInventoryOpen && !HasSatchel(), TEXT("Spark transition closes and hides inventory"));
+        Check(bHasSatchel, TEXT("Owned bag survives stage change"));
         Check(SparkFX && SparkFX->IsActive(), TEXT("Spark return activates FX"));
         FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("Screenshots/Inventory/spark.png"), false, false);
         break;
     case 3:
+        SetStage(EFNStage::Flesh, false);
+        Check(HasSatchel(), TEXT("Flesh keeps received bag"));
         ToggleInventory();
         HandleDeath(nullptr);
         Check(!bInventoryOpen && UGameplayStatics::GetGlobalTimeDilation(this) == 1.f, TEXT("Death closes menu and restores time"));

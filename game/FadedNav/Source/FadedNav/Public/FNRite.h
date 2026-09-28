@@ -14,7 +14,7 @@ UENUM()
 enum class EFNVerb : uint8 { Take, Milk, Pour, Place, Talk };
 
 UENUM()
-enum class EFNRiteReward : uint8 { None, HorseHelmet, StrelokopCache };
+enum class EFNRiteReward : uint8 { None, HorseHelmet, StrelokopCache, Satchel };
 
 // Stage bits for FFNRiteStep::Stages.
 namespace FNStage { constexpr uint8 Spark = 1, Skeleton = 2, Flesh = 4, Any = 7; }
