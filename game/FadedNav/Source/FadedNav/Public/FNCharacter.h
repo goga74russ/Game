@@ -174,8 +174,10 @@ protected:
 	UPROPERTY() TObjectPtr<class UInputAction> InteractAction;
 	UPROPERTY() TObjectPtr<class AFNRiteObject> Focus;
 
-	UPROPERTY() TObjectPtr<class UAnimMontage> FireMontage;
 	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
+	UPROPERTY() TObjectPtr<class UAnimSequence> MeleeAnim;
+	UPROPERTY() TObjectPtr<class UAnimSequence> UnarmedAnim;
+	UPROPERTY() TObjectPtr<class UAnimSequence> DodgeAnim;
 
 	// Input assets are built in code so the tech test needs no editor setup.
 	UPROPERTY() TObjectPtr<UInputMappingContext> Mapping;
@@ -202,6 +204,13 @@ private:
 	bool TraceCursorShot(float Range, float SpreadDeg, FHitResult& Hit, FVector& End) const;
 	void ConfigureCursorInput();
 	void RunIsometricSmokeTest();
+	void RunAnimationSmokeTest();
+	int32 AnimationTestStep = 0;
+	int32 AnimationTestFailures = 0;
+	float AnimationTestNextTime = 5.f;
+	TWeakObjectPtr<AActor> AnimationTestTarget;
+	float AnimationTestHealth = 0.f;
+	FVector AnimationTestOrigin = FVector::ZeroVector;
 	float DesiredCameraDistance = 2100.f;
 	// A projected test pointer exercises the same deprojection/targeting path without moving the OS cursor.
 	bool bTestCursor = false;
@@ -249,6 +258,10 @@ private:
 	void OnRoll();
 	void OnReload();
 	void OnMelee();
+	void ApplyMeleeHit(float Damage, float Radius, float Reach, FColor Tint);
+	float MeleeHitRemaining = -1.f;
+	float PendingMeleeDamage = 0.f, PendingMeleeRadius = 0.f, PendingMeleeReach = 0.f;
+	FColor PendingMeleeTint = FColor::White;
 	void OnRestart();
 
 	void FireShot();

@@ -3,3 +3,5 @@ Paragon: Wraith,Fab (Epic Games),Fab Standard License,yes,Claude,2026-09-26,Temp
 Paragon: Greystone,Fab (Epic Games),Fab Standard License,yes,Claude,2026-09-26,Temporary Perun visuals; not committed to public repo (no redistribution)
 Game Animation Sample,Fab (Epic Games),Fab Standard License,yes,Claude,2026-09-26,Separate project D:\Ai\UESamples; retarget in stage 1
 Human Skeleton (Free Pack),Fab (PolyOne Studio),Fab Standard License (to confirm on listing),yes,Claude,2026-09-26,"Skeleton-stage hero body; rigged via Mixamo (Adobe, commercial ok); not committed to public repo"
+
+Epic action derivatives,Local retarget of installed Epic packs,Same source license,yes,Codex,2026-09-28,HeroActions: melee and dash from Greystone; roll from Game Animation Sample; shot from Wraith. Local only; no public redistribution.

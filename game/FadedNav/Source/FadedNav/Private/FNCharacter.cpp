@@ -1,8 +1,8 @@
 #include "FNCharacter.h"
 
 #include "Animation/AnimInstance.h"
-#include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
+#include "FNHeroAnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/PoseableMeshComponent.h"
@@ -107,17 +107,12 @@ AFNCharacter::AFNCharacter()
 
 	// Temporary visuals: Paragon Wraith (Epic, free for UE projects — see docs/tech/assets_licenses.csv).
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> WraithMesh(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Meshes/Wraith.Wraith"));
-	static ConstructorHelpers::FClassFinder<UAnimInstance> WraithAnim(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Wraith_AnimBlueprint"));
-	static ConstructorHelpers::FObjectFinder<UAnimMontage> WraithFire(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Animations/Fire_A_Slow_Montage.Fire_A_Slow_Montage"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> WraithDeath(TEXT("/Game/ParagonWraith/Characters/Heroes/Wraith/Animations/Death_Forward.Death_Forward"));
 	if (WraithMesh.Succeeded())
 	{
 		GetMesh()->SetSkeletalMesh(WraithMesh.Object);
 		GetMesh()->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -90.f), FRotator(0.f, -90.f, 0.f));
-		if (WraithAnim.Succeeded())
-		{
-			GetMesh()->SetAnimInstanceClass(WraithAnim.Class);
-		}
+		GetMesh()->SetAnimInstanceClass(UFNHeroAnimInstance::StaticClass());
 		Body->SetVisibility(false);
 		Head->SetVisibility(false);
 		Gun->SetVisibility(false); // kept as the muzzle reference point
@@ -132,8 +127,13 @@ AFNCharacter::AFNCharacter()
 	// The Wraith keeps animating while hidden: it drives the skeleton.
 	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 
-	FireMontage = WraithFire.Object;
 	DeathAnim = WraithDeath.Object;
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> MeleeAsset(TEXT("/Game/Characters/HeroActions/A_HeroMelee"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> UnarmedAsset(TEXT("/Game/Characters/HeroActions/A_HeroUnarmed"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> DodgeAsset(TEXT("/Game/Characters/HeroActions/A_HeroRoll"));
+	MeleeAnim = MeleeAsset.Object;
+	UnarmedAnim = UnarmedAsset.Object;
+	DodgeAnim = DodgeAsset.Object;
 }
 
 void AFNCharacter::BeginPlay()
@@ -364,10 +364,20 @@ void AFNCharacter::OnRoll()
 	}
 
 	bRolling = true;
+	MeleeHitRemaining = -1.f; // a dodge cancels a strike before contact
+	MeleeCooldown = 0.f;
+	SetActorRotation(FRotator(0.f, RollDirection.Rotation().Yaw, 0.f));
 	RollRemaining = CurRollDuration;
 	IFramesRemaining = CurRollIFrames + TreeMods.IFrames;
 	Health->bInvulnerable = true;
 	bWantsFire = false;
+	if (UFNHeroAnimInstance* Anim = Cast<UFNHeroAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		Anim->CancelActions();
+		// Bones dash with a lowered shoulder; Flesh performs the landing roll.
+		if (Stage == EFNStage::Skeleton) { Anim->PlayFullBody(UnarmedAnim, CurRollDuration, 0.2f, 0.65f); }
+		else { Anim->PlayFullBody(DodgeAnim, CurRollDuration, 0.95f, 2.2f); }
+	}
 }
 
 void AFNCharacter::OnReload()
@@ -442,15 +452,9 @@ void AFNCharacter::FireShot()
 		break;
 	}
 
-	if (Stage == EFNStage::Flesh)
+	if (Stage != EFNStage::Spark)
 	{
-		if (UAnimInstance* Anim = GetMesh()->GetAnimInstance())
-		{
-			if (FireMontage && !Anim->Montage_IsPlaying(FireMontage))
-			{
-				Anim->Montage_Play(FireMontage, 2.5f);
-			}
-		}
+		if (UFNHeroAnimInstance* Anim = Cast<UFNHeroAnimInstance>(GetMesh()->GetAnimInstance())) { Anim->PlayShot(); }
 	}
 }
 
@@ -745,12 +749,15 @@ void AFNCharacter::GiveTrace()
 
 void AFNCharacter::Revive()
 {
+	MeleeHitRemaining = -1.f;
+	MeleeCooldown = 0.f;
 	bDead = false;
 	bDiedInArena = false;
 	RespawnTimer = -1.f;
 	SetActorLocation(Checkpoint, false, nullptr, ETeleportType::ResetPhysics);
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+	if (UFNHeroAnimInstance* Anim = Cast<UFNHeroAnimInstance>(GetMesh()->GetAnimInstance())) { Anim->CancelActions(); }
 	Body->SetRelativeRotation(FRotator::ZeroRotator);
 	SetStage(Stage, false);
 	Stamina = MaxStamina;
@@ -781,7 +788,28 @@ void AFNCharacter::OnMelee()
 	Stamina -= Cost;
 	StaminaDelay = 0.8f;
 	MeleeCooldown = Cooldown;
+	bWantsFire = false;
+	if (Stage == EFNStage::Spark)
+	{
+		ApplyMeleeHit(Damage, Radius, Reach, Tint);
+		return;
+	}
+	// Keep the existing cost / reach / damage, but apply it at contact rather
+	// than at the start of the wind-up. Menus slow this together with the pose.
+	PendingMeleeDamage = Damage;
+	PendingMeleeRadius = Radius;
+	PendingMeleeReach = Reach;
+	PendingMeleeTint = Tint;
+	MeleeHitRemaining = Stage == EFNStage::Skeleton ? 0.12f : 0.17f;
+	if (UFNHeroAnimInstance* Anim = Cast<UFNHeroAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		if (Stage == EFNStage::Skeleton) { Anim->PlayFullBody(UnarmedAnim, Cooldown, 0.2f, 2.7f); }
+		else { Anim->PlayFullBody(MeleeAnim, Cooldown); }
+	}
+}
 
+void AFNCharacter::ApplyMeleeHit(float Damage, float Radius, float Reach, FColor Tint)
+{
 	const FVector Center = GetActorLocation() + GetActorForwardVector() * Reach;
 	TArray<FOverlapResult> Overlaps;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(FNMelee), false, this);
@@ -825,6 +853,7 @@ void AFNCharacter::OnRestart()
 
 void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 {
+	MeleeHitRemaining = -1.f;
 	bDead = true;
 	bWantsFire = false;
 	bRolling = false;
@@ -854,11 +883,12 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 void AFNCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!bDead && !bTreeOpen && !bMapOpen && !bRolling) { UpdateCursorAim(); }
+	if (!bDead && !bTreeOpen && !bMapOpen && !bRolling && MeleeCooldown <= 0.f) { UpdateCursorAim(); }
 	Boom->SetWorldRotation(FRotator(IsometricPitch, IsometricYaw, 0.f));
 	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, DesiredCameraDistance, DeltaSeconds, 8.f);
 	Camera->SetFieldOfView(IsometricFOV);
 	if (FParse::Param(FCommandLine::Get(), TEXT("IsometricTest"))) { RunIsometricSmokeTest(); }
+	if (FParse::Param(FCommandLine::Get(), TEXT("AnimationTest"))) { RunAnimationSmokeTest(); }
 	UpdateRetarget();
 	UpdateFocus();
 	{
@@ -983,6 +1013,15 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	}
 
 	// Evolution by kills (Spark -> Skeleton -> Flesh).
+	if (MeleeHitRemaining >= 0.f)
+	{
+		MeleeHitRemaining -= DeltaSeconds;
+		if (MeleeHitRemaining <= 0.f)
+		{
+			MeleeHitRemaining = -1.f;
+			ApplyMeleeHit(PendingMeleeDamage, PendingMeleeRadius, PendingMeleeReach, PendingMeleeTint);
+		}
+	}
 	if (const AFNGameMode* GM = GetWorld()->GetAuthGameMode<AFNGameMode>())
 	{
 		if (Stage == EFNStage::Spark && GM->GetKills() >= KillsToSkeleton) { SetStage(EFNStage::Skeleton, true); }
@@ -1047,7 +1086,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 
 	// Fire
 	FireCooldown -= DeltaSeconds;
-	if (bWantsFire && !bRolling && !bReloading && FireCooldown <= 0.f && Controller && !bTreeOpen && !bMapOpen)
+	if (bWantsFire && !bRolling && !bReloading && MeleeCooldown <= 0.f && FireCooldown <= 0.f && Controller && !bTreeOpen && !bMapOpen)
 	{
 		FireShot();
 	}
