@@ -1,4 +1,6 @@
 #include "FNCharacter.h"
+#include "FNInventory.h"
+#include "FNTreba.h"
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimSequence.h"
@@ -35,6 +37,8 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
 
 AFNCharacter::AFNCharacter()
@@ -91,11 +95,27 @@ AFNCharacter::AFNCharacter()
 	// Spark form: a plasma ember with its own light (the only neon allowed: style_v0.1).
 	SparkOrb = MakePart(TEXT("SparkOrb"), Sphere.Object, FVector(0.f, 0.f, 20.f), FVector(0.45f));
 	SparkOrb->SetCastShadow(false);
+	// A being of light, not a ball: M_SparkCore is a translucent ember shell whose silhouette dissolves, so the opaque sphere edge is gone.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SparkMat(TEXT("/Game/Characters/Spark/M_SparkCore.M_SparkCore"));
+	if (SparkMat.Succeeded())
+	{
+		SparkOrb->SetMaterial(0, SparkMat.Object); // still carries a "Color" vector parameter, so the MID in BeginPlay keeps working
+	}
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMat(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	if (ShapeMat.Succeeded())
 	{
-		SparkOrb->SetMaterial(0, ShapeMat.Object); // the engine sphere ships with a grid material without a Color parameter
 		Head->SetMaterial(0, ShapeMat.Object);
+	}
+	// The FX sit at the ember's own centre (0, 0, 20) so that MuzzleLocation() stays truthful on the Spark stage.
+	SparkFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("SparkFX"));
+	SparkFX->SetupAttachment(RootComponent);
+	SparkFX->SetRelativeLocation(FVector(0.f, 0.f, 20.f));
+	SparkFX->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SparkFX->SetAutoActivate(false); // driven from SetStage, so Skeleton and Flesh are provably free of Spark particles
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> SparkNS(TEXT("/Game/Characters/Spark/NS_FNSpark.NS_FNSpark"));
+	if (SparkNS.Succeeded())
+	{
+		SparkFX->SetAsset(SparkNS.Object);
 	}
 	SparkLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("SparkLight"));
 	SparkLight->SetupAttachment(RootComponent); // stays with the body: bright in the Spark, a dim ember in the Skeleton
@@ -150,6 +170,11 @@ void AFNCharacter::BeginPlay()
 	LastSafeLocation = GetActorLocation();
 	Checkpoint = GetActorLocation();
 	if (UMaterialInstanceDynamic* MID = SparkOrb->CreateDynamicMaterialInstance(0)) { MID->SetVectorParameterValue(TEXT("Color"), SparkColor); }
+	// The ember's FX follow the hero's palette (NS_FNSpark defaults to the same colour; this keeps them in step if SparkColor is retuned).
+	SparkFX->SetVariableLinearColor(TEXT("User.Color"), SparkColor);
+	SparkFX->SetVariableFloat(TEXT("User.Intensity"), 1.f);
+	LastSparkLocation = GetActorLocation();
+	if (Stage == EFNStage::Spark) { SparkFX->Activate(true); }
 	InitRetarget();
 	Health->OnAvoided = [this]() { OnAttackAvoided(); };
 	Health->OnShieldBroken = [this]()
@@ -253,7 +278,10 @@ void AFNCharacter::BuildInput()
 	TreeAction->bTriggerWhenPaused = true;
 	Mapping->MapKey(TreeAction, EKeys::Tab);
 	Mapping->MapKey(MapAction, EKeys::M);
-	Mapping->MapKey(MapAction, EKeys::Escape);
+	InventoryAction = MakeAction(EInputActionValueType::Boolean);
+	CloseMenuAction = MakeAction(EInputActionValueType::Boolean);
+	Mapping->MapKey(InventoryAction, EKeys::I);
+	Mapping->MapKey(CloseMenuAction, EKeys::Escape);
 }
 
 void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -292,13 +320,15 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	}
 	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
 	Input->BindAction(MapAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleMap);
+	Input->BindAction(InventoryAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleInventory);
+	Input->BindAction(CloseMenuAction, ETriggerEvent::Started, this, &AFNCharacter::CloseMenus);
 	Input->BindAction(InteractAction, ETriggerEvent::Started, this, &AFNCharacter::OnInteract);
 	ConfigureCursorInput();
 }
 
 void AFNCharacter::OnMove(const FInputActionValue& Value)
 {
-	if (bDead || bRolling || !Controller || bTreeOpen || bMapOpen)
+	if (bDead || bRolling || !Controller || bTreeOpen || bMapOpen || bInventoryOpen)
 	{
 		return;
 	}
@@ -313,7 +343,7 @@ void AFNCharacter::OnMove(const FInputActionValue& Value)
 
 void AFNCharacter::OnZoom(const FInputActionValue& Value)
 {
-	if (bTreeOpen || bMapOpen) { return; } // the tree/map handle their own input
+	if (bTreeOpen || bMapOpen || bInventoryOpen) { return; } // the tree/map handle their own input
 	DesiredCameraDistance = FMath::Clamp(DesiredCameraDistance - Value.Get<float>() * CameraZoomStep, MinCameraDistance, MaxCameraDistance);
 }
 
@@ -322,10 +352,10 @@ void AFNCharacter::ConfigureCursorInput()
 	if (APlayerController* PC = Cast<APlayerController>(Controller))
 	{
 		PC->bShowMouseCursor = true;
-		PC->DefaultMouseCursor = (bTreeOpen || bMapOpen) ? EMouseCursor::Default : EMouseCursor::None;
+		PC->DefaultMouseCursor = (bTreeOpen || bMapOpen || bInventoryOpen) ? EMouseCursor::Default : EMouseCursor::None;
 		PC->CurrentMouseCursor = PC->DefaultMouseCursor;
-		PC->bEnableClickEvents = bTreeOpen;
-		PC->bEnableMouseOverEvents = bTreeOpen;
+		PC->bEnableClickEvents = bTreeOpen || bInventoryOpen;
+		PC->bEnableMouseOverEvents = bTreeOpen || bInventoryOpen;
 		FInputModeGameAndUI Mode;
 		Mode.SetHideCursorDuringCapture(false);
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::LockAlways);
@@ -336,7 +366,7 @@ void AFNCharacter::ConfigureCursorInput()
 void AFNCharacter::OnRoll()
 {
 	const float Cost = FMath::Max(5.f, RollCost * (1.f + TreeMods.Dodge));
-	if (bDead || bRolling || Stamina < Cost || bTreeOpen || bMapOpen)
+	if (bDead || bRolling || Stamina < Cost || bTreeOpen || bMapOpen || bInventoryOpen)
 	{
 		return;
 	}
@@ -382,7 +412,7 @@ void AFNCharacter::OnRoll()
 
 void AFNCharacter::OnReload()
 {
-	if (bDead || bReloading || Reserve <= 0 || Weapon == EFNWeapon::Plasma || bMapOpen)
+	if (bDead || bReloading || Reserve <= 0 || Weapon == EFNWeapon::Plasma || bMapOpen || bTreeOpen || bInventoryOpen)
 	{
 		return;
 	}
@@ -498,7 +528,7 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 
 void AFNCharacter::CycleWeapon(int32 Dir)
 {
-	if (bTreeOpen || bMapOpen) { return; } // the wheel zooms the tree; the map freezes combat
+	if (bTreeOpen || bMapOpen || bInventoryOpen) { return; } // the wheel zooms the tree; the map freezes combat
 	for (int32 Step = 1; Step <= 3; ++Step)
 	{
 		const EFNWeapon Next = static_cast<EFNWeapon>((static_cast<int32>(Weapon) + Dir * Step + 3) % 3);
@@ -512,7 +542,7 @@ void AFNCharacter::CycleWeapon(int32 Dir)
 
 void AFNCharacter::OnAbility(int32 Slot)
 {
-	if (bDead || bTreeOpen || bMapOpen) { return; }
+	if (bDead || bTreeOpen || bMapOpen || bInventoryOpen) { return; }
 	if (!IsAbilitySlotOpen(Slot)) { ShowMessage(TEXT("Слот 4 — ульта. Откроется в Нави")); return; }
 	const int32 Id = Panel[Slot];
 	if (Id < 0) { ShowMessage(FString::Printf(TEXT("Слот %d пуст — камень-навык ещё не найден"), Slot + 1)); return; }
@@ -611,6 +641,9 @@ void AFNCharacter::SetStage(EFNStage NewStage, bool bAnnounce)
 
 	// Visuals: ember -> pale bone frame -> full body.
 	SparkOrb->SetVisibility(Stage == EFNStage::Spark, true);
+	// Exactly the same condition drives the FX, and DeactivateImmediate leaves no orphan particles behind on the way to the Skeleton (director, 2026-09-28).
+	if (Stage == EFNStage::Spark) { SparkFX->Activate(true); }
+	else { SparkFX->DeactivateImmediate(); }
 	GetMesh()->SetVisibility(Stage == EFNStage::Flesh && bHasSkin);
 	const bool bBones = Stage == EFNStage::Skeleton && bHasSkin && SkeletonMesh->GetSkinnedAsset() && RetargetBones.Num() > 0;
 	SkeletonMesh->SetVisibility(bBones);
@@ -703,10 +736,56 @@ void AFNCharacter::ApplyStats()
 	GetCharacterMovement()->MaxWalkSpeed = DefaultWalkSpeed;
 }
 
+bool AFNCharacter::CanEditLoadout() const
+{
+    if (bDead || !GetWorld()) { return false; }
+    for (TActorIterator<AFNTreba> It(GetWorld()); It; ++It)
+    {
+        if (FVector::Dist2D(GetActorLocation(), It->GetActorLocation()) < 350.f) { return true; }
+    }
+    return false;
+}
+
+bool AFNCharacter::ApplyInventoryPanel(const TArray<int32>& Proposed, FString& Error)
+{
+    if (!bInventoryOpen || !CanEditLoadout()) { Error = TEXT("Менять камни можно только у требы"); return false; }
+    if (Proposed.Num() != 3) { Error = TEXT("Доступны три слота"); return false; }
+    TSet<int32> Seen;
+    for (int32 Id : Proposed)
+    {
+        if (Id == -1) { continue; }
+        if (Id < 0 || Id > 4 || !HasSkill(Id) || Seen.Contains(Id)) { Error = TEXT("Камень недоступен или уже установлен"); return false; }
+        Seen.Add(Id);
+    }
+    // Cooldowns belong to skill IDs, so moving slots cannot reset them.
+    for (int32 Slot = 0; Slot < 3; ++Slot) { Panel[Slot] = Proposed[Slot]; }
+    return true;
+}
+
+void AFNCharacter::CloseMenus()
+{
+    if (!bTreeOpen && !bMapOpen && !bInventoryOpen) { return; }
+    bTreeOpen = bMapOpen = bInventoryOpen = false;
+    bWantsFire = false;
+    UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+    ConfigureCursorInput();
+}
+
+void AFNCharacter::ToggleInventory()
+{
+    if (!Controller || bDead || bRolling || MeleeHitRemaining >= 0.f || bTreeOpen || bMapOpen) { return; }
+    bInventoryOpen = !bInventoryOpen;
+    bWantsFire = false;
+    LastMoveInput = FVector::ZeroVector;
+    GetCharacterMovement()->StopMovementImmediately();
+    UGameplayStatics::SetGlobalTimeDilation(this, bInventoryOpen ? 0.02f : 1.f);
+    ConfigureCursorInput();
+}
+
 void AFNCharacter::ToggleTree()
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC || bDead || bMapOpen)
+	if (!PC || bDead || bMapOpen || bInventoryOpen)
 	{
 		return;
 	}
@@ -721,7 +800,7 @@ void AFNCharacter::ToggleTree()
 void AFNCharacter::ToggleMap()
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC || bDead || bTreeOpen)
+	if (!PC || bDead || bTreeOpen || bInventoryOpen)
 	{
 		return;
 	}
@@ -767,7 +846,7 @@ void AFNCharacter::Revive()
 
 void AFNCharacter::OnMelee()
 {
-	if (bDead || bRolling || bTreeOpen || bMapOpen || MeleeCooldown > 0.f)
+	if (bDead || bRolling || bTreeOpen || bMapOpen || bInventoryOpen || MeleeCooldown > 0.f)
 	{
 		return;
 	}
@@ -853,6 +932,7 @@ void AFNCharacter::OnRestart()
 
 void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 {
+	CloseMenus();
 	MeleeHitRemaining = -1.f;
 	bDead = true;
 	bWantsFire = false;
@@ -883,7 +963,8 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 void AFNCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!bDead && !bTreeOpen && !bMapOpen && !bRolling && MeleeCooldown <= 0.f) { UpdateCursorAim(); }
+	if (FParse::Param(FCommandLine::Get(), TEXT("InventoryTest"))) { TickInventorySmokeTest(); }
+	if (!bDead && !bTreeOpen && !bMapOpen && !bInventoryOpen && !bRolling && MeleeCooldown <= 0.f) { UpdateCursorAim(); }
 	Boom->SetWorldRotation(FRotator(IsometricPitch, IsometricYaw, 0.f));
 	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, DesiredCameraDistance, DeltaSeconds, 8.f);
 	Camera->SetFieldOfView(IsometricFOV);
@@ -891,6 +972,17 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	if (FParse::Param(FCommandLine::Get(), TEXT("AnimationTest"))) { RunAnimationSmokeTest(); }
 	UpdateRetarget();
 	UpdateFocus();
+	if (Stage == EFNStage::Spark)
+	{
+		// The trail lives in world space, so a teleport must not paint a band between the old and the new position (director, 2026-09-28).
+		const FVector Now = GetActorLocation();
+		if (FVector::DistSquared(Now, LastSparkLocation) > FMath::Square(SparkTeleportCutoffCm))
+		{
+			SparkFX->ReinitializeSystem();
+		}
+		LastSparkLocation = Now;
+		SparkFX->SetVariableVec3(TEXT("User.Velocity"), GetVelocity());
+	}
 	{
 		// Dry regen: out of ammo and low on Yar -> faster (skills_demo §2).
 		const bool bDry = HasRangedWeapon() && Stage != EFNStage::Spark && Ammo + ScatterAmmo + Reserve <= 0;
@@ -901,7 +993,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	if (PerfectSlowMo > 0.f)
 	{
 		PerfectSlowMo -= FApp::GetDeltaTime(); // real time
-		if (PerfectSlowMo <= 0.f && !bTreeOpen && !bMapOpen) { UGameplayStatics::SetGlobalTimeDilation(this, 1.f); }
+		if (PerfectSlowMo <= 0.f && !bTreeOpen && !bMapOpen && !bInventoryOpen) { UGameplayStatics::SetGlobalTimeDilation(this, 1.f); }
 	}
 	// Test key "-SkillTest": Flesh with a rifle among the Strelokopni mobs casts all five gems, screenshots each.
 	if (FParse::Param(FCommandLine::Get(), TEXT("SkillTest")))
@@ -1086,7 +1178,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 
 	// Fire
 	FireCooldown -= DeltaSeconds;
-	if (bWantsFire && !bRolling && !bReloading && MeleeCooldown <= 0.f && FireCooldown <= 0.f && Controller && !bTreeOpen && !bMapOpen)
+	if (bWantsFire && !bRolling && !bReloading && MeleeCooldown <= 0.f && FireCooldown <= 0.f && Controller && !bTreeOpen && !bMapOpen && !bInventoryOpen)
 	{
 		FireShot();
 	}
@@ -1209,7 +1301,7 @@ bool AFNCharacter::HasSubtitle() const
 void AFNCharacter::UpdateFocus()
 {
 	Focus = nullptr;
-	if (bDead || bTreeOpen || bMapOpen) { return; }
+	if (bDead || bTreeOpen || bMapOpen || bInventoryOpen) { return; }
 	float Best = 330.f;
 	const FVector Me = GetActorLocation();
 	const FVector Fwd = GetControlRotation().Vector().GetSafeNormal2D();
@@ -1230,7 +1322,7 @@ FString AFNCharacter::GetFocusPrompt(bool& bCan) const
 
 void AFNCharacter::OnInteract()
 {
-	if (Focus && !bDead && !bTreeOpen && !bMapOpen) { Focus->Use(this); }
+	if (Focus && !bDead && !bTreeOpen && !bMapOpen && !bInventoryOpen) { Focus->Use(this); }
 }
 
 void AFNCharacter::GiveHelmet()

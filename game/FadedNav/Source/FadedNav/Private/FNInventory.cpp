@@ -75,7 +75,12 @@ void FFNInventoryScreen::Draw(UCanvas* Canvas, const FFNInventorySnapshot& State
 	auto Text = [&](const FString& Value, float X, float Y, FLinearColor Color, bool Title = false)
 	{
 		FCanvasTextItem Item(Origin + FVector2D(X, Y) * S, FText::FromString(Value), Title ? TitleFont : TextFont, Color);
-		Item.Scale = FVector2D(S, S); Canvas->DrawItem(Item);
+		float Width = 0.f, Height = 0.f;
+        Canvas->StrLen(Title ? TitleFont : TextFont, Value, Width, Height);
+        float Available = X >= 864.f ? 1150.f - X : (X < 350.f && Y > 70.f ? 338.f - X : 1150.f - X);
+        if (X >= 376.f && X < 850.f && (Y == 202.f || Y == 338.f)) { Available = 132.f; }
+        const float Fit = Width > 0.f ? FMath::Min(1.f, Available / Width) : 1.f;
+        Item.Scale = FVector2D(S * Fit, S * Fit); Canvas->DrawItem(Item);
 	};
 	auto Box = [&](float X, float Y, float W, float H, bool Highlight)
 	{
@@ -94,7 +99,7 @@ void FFNInventoryScreen::Draw(UCanvas* Canvas, const FFNInventorySnapshot& State
 	Text(TEXT("Снаряжение"), 28, 76, Bone, true);
 	float Y = 112;
 	for (const FString& Item : State.Equipment) { Text(Item, 28, Y, Bone); Y += 28; }
-	Text(TEXT("Калита — обрядовые предметы"), 28, 328, Bone, true);
+	Text(TEXT("Калита"), 28, 328, Bone, true);
 	for (int32 I = 0; I < AFNCharacter::SatchelSize; ++I)
 	{
 		Box(28, 366 + I * 34, 310, 30, false);
