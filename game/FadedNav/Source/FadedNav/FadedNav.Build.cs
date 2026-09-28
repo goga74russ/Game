@@ -8,7 +8,7 @@ public class FadedNav : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
-			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "AIModule", "RenderCore", "SlateCore"
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "AIModule", "Niagara", "RenderCore", "SlateCore"
 		});
 	}
 }

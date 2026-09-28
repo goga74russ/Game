@@ -692,7 +692,33 @@ void AFNHUD::DrawHUD()
 	const float Time = GetWorld()->GetRealTimeSeconds();
 
 	AFNCharacter* Player = Cast<AFNCharacter>(GetOwningPawn());
-	if (Player && Player->IsMapOpen())
+	if (Player && Player->HasSatchel() && Player->IsInventoryOpen())
+    {
+        if (!bInventoryWasOpen) { InventoryScreen.Reset(); }
+        bInventoryWasOpen = true;
+        if (!bInventoryIconsLoaded)
+        {
+            bInventoryIconsLoaded = true;
+            const TCHAR* Names[] = { TEXT("thunder_strike"), TEXT("lightning_rod"), TEXT("flare"), TEXT("chain_spark"), TEXT("storm_ward") };
+            for (const TCHAR* Name : Names)
+            {
+                InventoryIcons.Add(LoadObject<UTexture2D>(nullptr, *(FString(TEXT("/Game/UI/Inventory/T_")) + Name)));
+            }
+        }
+        TMap<int32, UTexture2D*> Icons;
+        for (int32 I = 0; I < InventoryIcons.Num(); ++I) { if (InventoryIcons[I]) { Icons.Add(I, InventoryIcons[I]); } }
+        const FFNInventorySnapshot State = FFNInventorySnapshot::Capture(*Player, Player->CanEditLoadout());
+        InventoryScreen.Draw(Canvas, State, Font(0, 24.f), Font(2, 18.f), Icons);
+        APlayerController* PC = GetOwningPlayerController();
+        float MX, MY;
+        if (PC && PC->WasInputKeyJustPressed(EKeys::LeftMouseButton) && PC->GetMousePosition(MX, MY))
+        {
+            InventoryScreen.Click(FVector2D(MX, MY), State, [Player](const TArray<int32>& Panel, FString& Error) { return Player->ApplyInventoryPanel(Panel, Error); });
+        }
+        return;
+    }
+    bInventoryWasOpen = false;
+    if (Player && Player->IsMapOpen())
 	{
 		DrawMap(Player);
 		return;
@@ -711,7 +737,7 @@ void AFNHUD::DrawHUD()
 
 	if (GetWorld()->GetTimeSeconds() < 15.0)
 	{
-		Txt(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо   ·   M — карта"),
+		Txt(FString(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо   ·   M — карта")) + (Player && Player->HasSatchel() ? TEXT("   ·   I — сумка") : TEXT("")),
 			W * 0.5f, 604.f, Font(3, 15.f), BoneDim, EAlign::Center);
 	}
 
@@ -997,7 +1023,7 @@ void AFNHUD::DrawHUD()
 		}
 
 		// ---- Satchel (rite items), above the Spark emblem.
-		if (Player->GetSatchel().Num() > 0)
+		if (Player->HasSatchel() && Player->GetSatchel().Num() > 0)
 		{
 			float SY = H - 30.f - 72.f - 26.f - 20.f * Player->GetSatchel().Num();
 			Txt(TEXT("сума"), 30.f, SY, Font(3, 14.f), BoneDim);

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "FNInventory.h"
 #include "FNHUD.generated.h"
 
 class UFont;
@@ -53,4 +54,8 @@ private:
 	float ShownHealth = -1.f;
 	float ShownBoss = -1.f;
 	int32 HoveredNode = -1;
+	FFNInventoryScreen InventoryScreen;
+	bool bInventoryWasOpen = false;
+	bool bInventoryIconsLoaded = false;
+	UPROPERTY() TArray<TObjectPtr<UTexture2D>> InventoryIcons;
 };

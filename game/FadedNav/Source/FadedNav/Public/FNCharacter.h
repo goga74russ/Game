@@ -8,6 +8,7 @@
 class UCameraComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
+class UNiagaraComponent;
 class UInputAction;
 class UInputMappingContext;
 class UFNHealthComponent;
@@ -85,6 +86,11 @@ public:
 	class UFNSkillTree* GetTree() const { return Tree; }
 	bool IsTreeOpen() const { return bTreeOpen; }
 	bool IsMapOpen() const { return bMapOpen; }
+	bool IsInventoryOpen() const { return bInventoryOpen; }
+	bool CanEditLoadout() const;
+	bool ApplyInventoryPanel(const TArray<int32>& Proposed, FString& Error);
+	void ToggleInventory();
+	void CloseMenus();
 	int32 GetSkillPoints() const;
 	void TryAllocate(int32 Node);
 	void ToggleTree();
@@ -97,8 +103,10 @@ public:
 	void FindRune(int32 Node);
 
 	// Satchel for rite items (secrets_v0.1: 6 slots [D], no weight, kept on death).
+	bool HasSatchel() const { return bHasSatchel && Stage != EFNStage::Spark; }
+	void GiveSatchel() { if (Stage != EFNStage::Spark) { bHasSatchel = true; } }
 	bool HasItem(FName Item) const { return Satchel.Contains(Item); }
-	bool IsSatchelFull() const { return Satchel.Num() >= SatchelSize; }
+	bool IsSatchelFull() const { return !HasSatchel() || Satchel.Num() >= SatchelSize; }
 	void AddItem(FName Item) { if (!IsSatchelFull()) { Satchel.Add(Item); } }
 	void RemoveItem(FName Item) { Satchel.RemoveSingle(Item); }
 	const TArray<FName>& GetSatchel() const { return Satchel; }
@@ -167,6 +175,11 @@ protected:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UFNSkillTree> Tree;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMeshComponent> SparkOrb;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPointLightComponent> SparkLight;
+	// Spark FX: the halo and the short world-space trail (NS_FNSpark). Orbiting spirits are deliberately deferred (director, 2026-09-28).
+	UPROPERTY(VisibleAnywhere) TObjectPtr<UNiagaraComponent> SparkFX;
+	// Any single-frame gap larger than this is a teleport, not locomotion: a 6 m dash (Flare) or a checkpoint return. The world-space trail is wiped rather than linked across the gap.
+	UPROPERTY(EditAnywhere, Category = "Spark") float SparkTeleportCutoffCm = 200.f;
+	FVector LastSparkLocation = FVector::ZeroVector;
 	// Skeleton stage body (Fab "Free Pack - Human Skeleton", Mixamo-rigged). Copies the hidden Wraith pose each frame.
 	UPROPERTY(VisibleAnywhere) TObjectPtr<class UPoseableMeshComponent> SkeletonMesh;
 	UPROPERTY() TObjectPtr<UStaticMeshComponent> HelmetOnFlesh;
@@ -174,8 +187,10 @@ protected:
 	UPROPERTY() TObjectPtr<class UInputAction> InteractAction;
 	UPROPERTY() TObjectPtr<class AFNRiteObject> Focus;
 
-	UPROPERTY() TObjectPtr<class UAnimMontage> FireMontage;
 	UPROPERTY() TObjectPtr<class UAnimSequence> DeathAnim;
+	UPROPERTY() TObjectPtr<class UAnimSequence> MeleeAnim;
+	UPROPERTY() TObjectPtr<class UAnimSequence> UnarmedAnim;
+	UPROPERTY() TObjectPtr<class UAnimSequence> DodgeAnim;
 
 	// Input assets are built in code so the tech test needs no editor setup.
 	UPROPERTY() TObjectPtr<UInputMappingContext> Mapping;
@@ -190,6 +205,8 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> AbilityActions[4];
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
 	UPROPERTY() TObjectPtr<UInputAction> MapAction;
+	UPROPERTY() TObjectPtr<UInputAction> InventoryAction;
+	UPROPERTY() TObjectPtr<UInputAction> CloseMenuAction;
 
 private:
 	bool CastSkill(int32 SkillId);
@@ -202,6 +219,13 @@ private:
 	bool TraceCursorShot(float Range, float SpreadDeg, FHitResult& Hit, FVector& End) const;
 	void ConfigureCursorInput();
 	void RunIsometricSmokeTest();
+	void RunAnimationSmokeTest();
+	int32 AnimationTestStep = 0;
+	int32 AnimationTestFailures = 0;
+	float AnimationTestNextTime = 5.f;
+	TWeakObjectPtr<AActor> AnimationTestTarget;
+	float AnimationTestHealth = 0.f;
+	FVector AnimationTestOrigin = FVector::ZeroVector;
 	float DesiredCameraDistance = 2100.f;
 	// A projected test pointer exercises the same deprojection/targeting path without moving the OS cursor.
 	bool bTestCursor = false;
@@ -228,10 +252,12 @@ private:
 	void UpdateFocus();
 	void UpdateHelmet();
 	TArray<FName> Satchel;
+	bool bHasSatchel = false;
 	FString SubSpeaker, SubText;
 	double SubTime = -100.0;
 	bool bHelmet = false;
 	bool bMapOpen = false;
+	bool bInventoryOpen = false;
 	// Per-bone retarget Wraith (Epic names) -> Mixamo skeleton, in world space, aligning rest-pose bone directions.
 	struct FRetargetBone { FName Src, Dst; int32 SrcIdx = INDEX_NONE, DstIdx = INDEX_NONE; FQuat Align = FQuat::Identity; };
 	TArray<FRetargetBone> RetargetBones;
@@ -244,11 +270,15 @@ private:
 	void OnMoveStopped() { LastMoveInput = FVector::ZeroVector; }
 	void OnZoom(const FInputActionValue& Value);
 	// Isometric controls: LMB ranged (unarmed falls back to melee), RMB melee.
-	void OnFireStarted() { if (!bDead && !bTreeOpen && !bMapOpen) { if (HasRangedWeapon()) { bWantsFire = true; } else { OnMelee(); } } }
+	void OnFireStarted() { if (!bDead && !bTreeOpen && !bMapOpen && !bInventoryOpen) { if (HasRangedWeapon()) { bWantsFire = true; } else { OnMelee(); } } }
 	void OnFireStopped() { bWantsFire = false; }
 	void OnRoll();
 	void OnReload();
 	void OnMelee();
+	void ApplyMeleeHit(float Damage, float Radius, float Reach, FColor Tint);
+	float MeleeHitRemaining = -1.f;
+	float PendingMeleeDamage = 0.f, PendingMeleeRadius = 0.f, PendingMeleeReach = 0.f;
+	FColor PendingMeleeTint = FColor::White;
 	void OnRestart();
 
 	void FireShot();
@@ -311,4 +341,8 @@ private:
 	float StageBaseHealth = 100.f;
 	float StageBaseSpeed = 500.f;
 	struct FFNTreeCache { float Ranged = 1.f, FireRate = 1.f, Weak = 0.f, Reload = 0.f, Reserve = 0.f, Melee = 0.f, MeleeHeal = 0.f, Stamina = 0.f, Dodge = 0.f, IFrames = 0.f; bool bWeakFlinch = false; } TreeMods;
+
+	void TickInventorySmokeTest();
+	int32 InventoryTestStep = 0, InventoryTestFailures = 0;
+	double InventoryTestNextTime = 0;
 };
