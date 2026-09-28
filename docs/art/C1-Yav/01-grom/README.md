@@ -1,7 +1,7 @@
 # Глава 1 — Перун «Грозовые Выси»: библия персонажей (v0.1, черновик art-director)
 
 > ⚠️ **Черновик, не утверждён.** Правила — `docs/GDD_v1.md` (§3, §4, §9, §12). Стиль и каналы — `docs/art/style_v0.1.md` §1–2, §4; палитра Высей — `docs/art/biomes_v0.1.md` §1.
-> Кто где стоит — `docs/level/vysi_layout_v0.1.md` (L). Лор и сцены — `docs/lore/foundation_perun_v0.1.md` (F), `tale_vysi_v0.1.md` (T), `vysi_lines_v0.1.md` (V), `nav_laws_v0.1.md` (N). Бой — `docs/design/bosses.md` (B). Реализованное в прототипе — `memories/consensus.md` (C). Типы навий и люди Высей — `docs/lore/world_part1_yav_v0.1.md` (W): на него ссылаются T и V, поэтому он использован как первоисточник их описаний.
+> Кто где стоит — `docs/level/vysi_layout_v0.1.md` (L). Лор и сцены — `docs/lore/foundation_perun_v0.1.md` (F), `tale_vysi_v0.1.md` (T), `vysi_lines_v0.1.md` (V), `nav_laws_v0.1.md` (N). Бой — `docs/archive/design/bosses.md` (B). Реализованное в прототипе — `memories/consensus.md` (C). Типы навий и люди Высей — `docs/lore/world_part1_yav_v0.1.md` (W): на него ссылаются T и V, поэтому он использован как первоисточник их описаний.
 > **Пометки:** без пометки — взято из источника (указан в скобках); **[предл.]** — предложение арт-директора, решает директор; **[пробел]** — в документах нет, не заполнено; **[Д]** — ориентир до прототипа.
 > HEX без пометки — из `style_v0.1` / `biomes_v0.1`. HEX с [предл.] — стартовые значения для концептов.
 
