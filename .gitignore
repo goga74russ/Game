@@ -35,3 +35,6 @@ game/FadedNav/Content/Fab/
 game/FadedNav/Import/
 game/FadedNav/Content/Characters/
 docs/ui/*.png
+
+# Unsorted local references: check provenance before publishing.
+references/inbox/
