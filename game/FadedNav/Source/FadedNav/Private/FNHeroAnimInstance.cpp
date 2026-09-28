@@ -141,6 +141,14 @@ struct FFNHeroAnimProxy : public FAnimInstanceProxy
 				}
 			}
 			FAnimationPoseData Result(Output), Input(FullBody);
+			// Wraith's integrated rifle has pack-specific deformation tracks.
+			// Holster its geometry during foreign full-body actions; do not
+			// leave unsupported pieces floating next to the character.
+			for (FCompactPoseBoneIndex Index : FullBody.Pose.ForEachBoneIndex())
+			{
+				const FString Name = FullBody.Pose.GetBoneContainer().GetReferenceSkeleton().GetBoneName(FullBody.Pose.GetBoneContainer().GetSkeletonIndex(Index)).ToString();
+				if (Name == TEXT("canon_gun") || Name.StartsWith(TEXT("gun_"))) { FullBody.Pose[Index].SetScale3D(FVector::ZeroVector); }
+			}
 			FAnimationRuntime::BlendTwoPosesTogetherInPlace(Result, Input, 1.f - ActionWeight);
 		}
 		Output.Pose.NormalizeRotations();
