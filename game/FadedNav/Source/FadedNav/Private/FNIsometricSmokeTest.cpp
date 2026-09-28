@@ -129,18 +129,27 @@ void AFNCharacter::RunIsometricSmokeTest()
 	case 6:
 		ToggleTree();
 		Check(!bTreeOpen && PC->bShowMouseCursor && PC->CurrentMouseCursor == EMouseCursor::None, TEXT("closing tree restores isometric cursor controls"));
-		SetStage(EFNStage::Skeleton, false);
-		Shot(TEXT("03_skeleton"));
+		ToggleMap();
+		OnFireStarted();
+		OnMove(FInputActionValue(FVector2D(0.f, 1.f)));
+		Check(bMapOpen && !bWantsFire && LastMoveInput.IsNearlyZero() && PC->CurrentMouseCursor == EMouseCursor::Default, TEXT("M opens the map and blocks combat and movement"));
+		Shot(TEXT("03_map"));
 		break;
 	case 7:
+		ToggleMap();
+		Check(!bMapOpen && PC->CurrentMouseCursor == EMouseCursor::None, TEXT("M closes the map and restores combat cursor controls"));
+		SetStage(EFNStage::Skeleton, false);
+		Shot(TEXT("04_skeleton"));
+		break;
+	case 8:
 		SetStage(EFNStage::Spark, false);
 		Yar = MaxYar;
 		UpdateCursorAim();
 		FireShot();
 		Check(Yar < MaxYar, TEXT("Spark ranged attack still spends Yar"));
-		Shot(TEXT("04_spark"));
+		Shot(TEXT("05_spark"));
 		break;
-	case 8:
+	case 9:
 		SetStage(EFNStage::Flesh, false);
 		Check(Boom->GetComponentRotation().Equals(FRotator(IsometricPitch, IsometricYaw, 0.f), 0.1f), TEXT("camera survives all evolution stages"));
 		UE_LOG(LogTemp, Display, TEXT("[IsoTest] COMPLETE failures=%d"), IsometricTestFailures);

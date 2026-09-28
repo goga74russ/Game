@@ -34,6 +34,7 @@ private:
 	void GradRect(float X, float Y, float W, float H, const FLinearColor& Top, const FLinearColor& Bottom);
 	void Ornament(float CX, float Y, float HalfW);
 	void DrawTree(class AFNCharacter* Player);
+	void DrawMap(class AFNCharacter* Player);
 	void TreeInput(class AFNCharacter* Player);
 
 	// Skill tree camera (tree space -> screen): pan in tree units, zoom as pixels per unit at 720p.

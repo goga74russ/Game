@@ -84,9 +84,11 @@ public:
 	// Passive tree (GDD §6).
 	class UFNSkillTree* GetTree() const { return Tree; }
 	bool IsTreeOpen() const { return bTreeOpen; }
+	bool IsMapOpen() const { return bMapOpen; }
 	int32 GetSkillPoints() const;
 	void TryAllocate(int32 Node);
 	void ToggleTree();
+	void ToggleMap();
 
 	// Exam hooks.
 	void ReviveAt(const FVector& At);
@@ -187,6 +189,7 @@ protected:
 	UPROPERTY() TObjectPtr<UInputAction> Weapon1Action;
 	UPROPERTY() TObjectPtr<UInputAction> AbilityActions[4];
 	UPROPERTY() TObjectPtr<UInputAction> TreeAction;
+	UPROPERTY() TObjectPtr<UInputAction> MapAction;
 
 private:
 	bool CastSkill(int32 SkillId);
@@ -228,6 +231,7 @@ private:
 	FString SubSpeaker, SubText;
 	double SubTime = -100.0;
 	bool bHelmet = false;
+	bool bMapOpen = false;
 	// Per-bone retarget Wraith (Epic names) -> Mixamo skeleton, in world space, aligning rest-pose bone directions.
 	struct FRetargetBone { FName Src, Dst; int32 SrcIdx = INDEX_NONE, DstIdx = INDEX_NONE; FQuat Align = FQuat::Identity; };
 	TArray<FRetargetBone> RetargetBones;
@@ -240,7 +244,7 @@ private:
 	void OnMoveStopped() { LastMoveInput = FVector::ZeroVector; }
 	void OnZoom(const FInputActionValue& Value);
 	// Isometric controls: LMB ranged (unarmed falls back to melee), RMB melee.
-	void OnFireStarted() { if (!bDead && !bTreeOpen) { if (HasRangedWeapon()) { bWantsFire = true; } else { OnMelee(); } } }
+	void OnFireStarted() { if (!bDead && !bTreeOpen && !bMapOpen) { if (HasRangedWeapon()) { bWantsFire = true; } else { OnMelee(); } } }
 	void OnFireStopped() { bWantsFire = false; }
 	void OnRoll();
 	void OnReload();
