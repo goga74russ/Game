@@ -249,8 +249,11 @@ void AFNCharacter::BuildInput()
 	InteractAction = MakeAction(EInputActionValueType::Boolean);
 	Mapping->MapKey(InteractAction, EKeys::E);
 	TreeAction = MakeAction(EInputActionValueType::Boolean);
+	MapAction = MakeAction(EInputActionValueType::Boolean);
 	TreeAction->bTriggerWhenPaused = true;
 	Mapping->MapKey(TreeAction, EKeys::Tab);
+	Mapping->MapKey(MapAction, EKeys::M);
+	Mapping->MapKey(MapAction, EKeys::Escape);
 }
 
 void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -288,13 +291,14 @@ void AFNCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(AbilityActions[i], ETriggerEvent::Started, this, &AFNCharacter::OnAbility, i);
 	}
 	Input->BindAction(TreeAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleTree);
+	Input->BindAction(MapAction, ETriggerEvent::Started, this, &AFNCharacter::ToggleMap);
 	Input->BindAction(InteractAction, ETriggerEvent::Started, this, &AFNCharacter::OnInteract);
 	ConfigureCursorInput();
 }
 
 void AFNCharacter::OnMove(const FInputActionValue& Value)
 {
-	if (bDead || bRolling || !Controller || bTreeOpen)
+	if (bDead || bRolling || !Controller || bTreeOpen || bMapOpen)
 	{
 		return;
 	}
@@ -309,7 +313,7 @@ void AFNCharacter::OnMove(const FInputActionValue& Value)
 
 void AFNCharacter::OnZoom(const FInputActionValue& Value)
 {
-	if (bTreeOpen) { return; } // the tree handles its own zoom
+	if (bTreeOpen || bMapOpen) { return; } // the tree/map handle their own input
 	DesiredCameraDistance = FMath::Clamp(DesiredCameraDistance - Value.Get<float>() * CameraZoomStep, MinCameraDistance, MaxCameraDistance);
 }
 
@@ -318,7 +322,7 @@ void AFNCharacter::ConfigureCursorInput()
 	if (APlayerController* PC = Cast<APlayerController>(Controller))
 	{
 		PC->bShowMouseCursor = true;
-		PC->DefaultMouseCursor = bTreeOpen ? EMouseCursor::Default : EMouseCursor::None;
+		PC->DefaultMouseCursor = (bTreeOpen || bMapOpen) ? EMouseCursor::Default : EMouseCursor::None;
 		PC->CurrentMouseCursor = PC->DefaultMouseCursor;
 		PC->bEnableClickEvents = bTreeOpen;
 		PC->bEnableMouseOverEvents = bTreeOpen;
@@ -332,7 +336,7 @@ void AFNCharacter::ConfigureCursorInput()
 void AFNCharacter::OnRoll()
 {
 	const float Cost = FMath::Max(5.f, RollCost * (1.f + TreeMods.Dodge));
-	if (bDead || bRolling || Stamina < Cost || bTreeOpen)
+	if (bDead || bRolling || Stamina < Cost || bTreeOpen || bMapOpen)
 	{
 		return;
 	}
@@ -368,7 +372,7 @@ void AFNCharacter::OnRoll()
 
 void AFNCharacter::OnReload()
 {
-	if (bDead || bReloading || Reserve <= 0 || Weapon == EFNWeapon::Plasma)
+	if (bDead || bReloading || Reserve <= 0 || Weapon == EFNWeapon::Plasma || bMapOpen)
 	{
 		return;
 	}
@@ -490,7 +494,7 @@ void AFNCharacter::FireTrace(float Damage, float SpreadDeg, float Range, const F
 
 void AFNCharacter::CycleWeapon(int32 Dir)
 {
-	if (bTreeOpen) { return; } // the wheel zooms the tree
+	if (bTreeOpen || bMapOpen) { return; } // the wheel zooms the tree; the map freezes combat
 	for (int32 Step = 1; Step <= 3; ++Step)
 	{
 		const EFNWeapon Next = static_cast<EFNWeapon>((static_cast<int32>(Weapon) + Dir * Step + 3) % 3);
@@ -504,7 +508,7 @@ void AFNCharacter::CycleWeapon(int32 Dir)
 
 void AFNCharacter::OnAbility(int32 Slot)
 {
-	if (bDead || bTreeOpen) { return; }
+	if (bDead || bTreeOpen || bMapOpen) { return; }
 	if (!IsAbilitySlotOpen(Slot)) { ShowMessage(TEXT("Слот 4 — ульта. Откроется в Нави")); return; }
 	const int32 Id = Panel[Slot];
 	if (Id < 0) { ShowMessage(FString::Printf(TEXT("Слот %d пуст — камень-навык ещё не найден"), Slot + 1)); return; }
@@ -698,7 +702,7 @@ void AFNCharacter::ApplyStats()
 void AFNCharacter::ToggleTree()
 {
 	APlayerController* PC = Cast<APlayerController>(GetController());
-	if (!PC || bDead)
+	if (!PC || bDead || bMapOpen)
 	{
 		return;
 	}
@@ -707,6 +711,21 @@ void AFNCharacter::ToggleTree()
 	LastMoveInput = FVector::ZeroVector;
 	// Time nearly stops (not a hard pause, so HUD hit boxes and input keep working).
 	UGameplayStatics::SetGlobalTimeDilation(this, bTreeOpen ? 0.02f : 1.f);
+	ConfigureCursorInput();
+}
+
+void AFNCharacter::ToggleMap()
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || bDead || bTreeOpen)
+	{
+		return;
+	}
+	bMapOpen = !bMapOpen;
+	bWantsFire = false;
+	LastMoveInput = FVector::ZeroVector;
+	// Keep the world visible behind the map, but freeze combat and movement while it is open.
+	UGameplayStatics::SetGlobalTimeDilation(this, bMapOpen ? 0.02f : 1.f);
 	ConfigureCursorInput();
 }
 
@@ -741,7 +760,7 @@ void AFNCharacter::Revive()
 
 void AFNCharacter::OnMelee()
 {
-	if (bDead || bRolling || bTreeOpen || MeleeCooldown > 0.f)
+	if (bDead || bRolling || bTreeOpen || bMapOpen || MeleeCooldown > 0.f)
 	{
 		return;
 	}
@@ -835,7 +854,7 @@ void AFNCharacter::HandleDeath(AActor* /*Killer*/)
 void AFNCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!bDead && !bTreeOpen && !bRolling) { UpdateCursorAim(); }
+	if (!bDead && !bTreeOpen && !bMapOpen && !bRolling) { UpdateCursorAim(); }
 	Boom->SetWorldRotation(FRotator(IsometricPitch, IsometricYaw, 0.f));
 	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, DesiredCameraDistance, DeltaSeconds, 8.f);
 	Camera->SetFieldOfView(IsometricFOV);
@@ -852,7 +871,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 	if (PerfectSlowMo > 0.f)
 	{
 		PerfectSlowMo -= FApp::GetDeltaTime(); // real time
-		if (PerfectSlowMo <= 0.f && !bTreeOpen) { UGameplayStatics::SetGlobalTimeDilation(this, 1.f); }
+		if (PerfectSlowMo <= 0.f && !bTreeOpen && !bMapOpen) { UGameplayStatics::SetGlobalTimeDilation(this, 1.f); }
 	}
 	// Test key "-SkillTest": Flesh with a rifle among the Strelokopni mobs casts all five gems, screenshots each.
 	if (FParse::Param(FCommandLine::Get(), TEXT("SkillTest")))
@@ -1028,7 +1047,7 @@ void AFNCharacter::Tick(float DeltaSeconds)
 
 	// Fire
 	FireCooldown -= DeltaSeconds;
-	if (bWantsFire && !bRolling && !bReloading && FireCooldown <= 0.f && Controller && !bTreeOpen)
+	if (bWantsFire && !bRolling && !bReloading && FireCooldown <= 0.f && Controller && !bTreeOpen && !bMapOpen)
 	{
 		FireShot();
 	}
@@ -1151,7 +1170,7 @@ bool AFNCharacter::HasSubtitle() const
 void AFNCharacter::UpdateFocus()
 {
 	Focus = nullptr;
-	if (bDead || bTreeOpen) { return; }
+	if (bDead || bTreeOpen || bMapOpen) { return; }
 	float Best = 330.f;
 	const FVector Me = GetActorLocation();
 	const FVector Fwd = GetControlRotation().Vector().GetSafeNormal2D();
@@ -1172,7 +1191,7 @@ FString AFNCharacter::GetFocusPrompt(bool& bCan) const
 
 void AFNCharacter::OnInteract()
 {
-	if (Focus && !bDead && !bTreeOpen) { Focus->Use(this); }
+	if (Focus && !bDead && !bTreeOpen && !bMapOpen) { Focus->Use(this); }
 }
 
 void AFNCharacter::GiveHelmet()

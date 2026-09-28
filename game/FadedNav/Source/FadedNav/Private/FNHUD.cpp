@@ -601,6 +601,77 @@ void AFNHUD::DrawTree(AFNCharacter* Player)
 	}
 }
 
+void AFNHUD::DrawMap(AFNCharacter* Player)
+{
+	const float W = Canvas->ClipX / S, H = 720.f;
+	const float PanelW = FMath::Min(W - 72.f, 980.f);
+	const float PanelH = 510.f;
+	const float X0 = (W - PanelW) * 0.5f, Y0 = (H - PanelH) * 0.5f;
+
+	// A restrained map plate: the world stays dimly visible behind it, like ink on old bark.
+	DrawRect(Hex(TEXT("050403"), 0.78f), 0.f, 0.f, Canvas->ClipX, Canvas->ClipY);
+	FillBevel(X0, Y0, PanelW, PanelH, 14.f, Hex(TEXT("17120d"), 0.97f));
+	LineBevel(X0, Y0, PanelW, PanelH, 14.f, Line, 1.5f);
+	Txt(TEXT("ГРОЗОВЫЕ ВЫСИ"), W * 0.5f, Y0 + 22.f, Font(0, 30.f), Bone, EAlign::Center);
+	Txt(TEXT("Карта Яви  ·  M / Esc — закрыть"), W * 0.5f, Y0 + 60.f, Font(3, 16.f), BoneDim, EAlign::Center);
+	Ornament(W * 0.5f, Y0 + 78.f, 155.f);
+
+	const float MapX = X0 + 38.f, MapY = Y0 + 98.f, MapW = PanelW - 76.f, MapH = 310.f;
+	const float MinX = -80.f, MaxX = 930.f, MinY = -190.f, MaxY = 190.f;
+	const float Scale = FMath::Min(MapW / (MaxX - MinX), MapH / (MaxY - MinY));
+	const FVector2D MapCenter(MapX + MapW * 0.5f, MapY + MapH * 0.5f);
+	auto ToMap = [&](const FVector2D& P)
+	{
+		return MapCenter + FVector2D((P.X - (MinX + MaxX) * 0.5f) * Scale, -(P.Y - (MinY + MaxY) * 0.5f) * Scale);
+	};
+
+	// Faint coordinate lines keep the route readable without turning this into a minimap HUD.
+	for (int32 i = 1; i < 5; ++i)
+	{
+		const float GX = MapX + MapW * i / 5.f, GY = MapY + MapH * i / 5.f;
+		DrawLine(GX * S, MapY * S, GX * S, (MapY + MapH) * S, Hex(TEXT("b8955a"), 0.10f), 1.f * S);
+		DrawLine(MapX * S, GY * S, (MapX + MapW) * S, GY * S, Hex(TEXT("b8955a"), 0.10f), 1.f * S);
+	}
+
+	// Main route, with a second dim stroke suggesting the remembered road beneath it.
+	for (int32 i = 0; i + 1 < UE_ARRAY_COUNT(MapPath); ++i)
+	{
+		const FVector2D A = ToMap(MapPath[i]), B = ToMap(MapPath[i + 1]);
+		DrawLine(A.X * S, A.Y * S, B.X * S, B.Y * S, Hex(TEXT("5a4730"), 0.8f), 8.f * S);
+		DrawLine(A.X * S, A.Y * S, B.X * S, B.Y * S, Gold, 2.2f * S);
+	}
+
+	const FVector P = Player ? Player->GetActorLocation() / 100.f : FVector::ZeroVector;
+	const FVector2D Me = ToMap(FVector2D(P.X, P.Y));
+	FillDisc(Me.X, Me.Y, 8.f, Player ? Player->GetSparkColor() : Bone);
+	DrawRing(Me.X, Me.Y, 14.f, Player ? Player->GetSparkColor() : Bone, 1.5f);
+	DrawRing(Me.X, Me.Y, 20.f, Hex(TEXT("e8dfc8"), 0.25f), 1.f);
+
+	const FVector2D Treba = ToMap(FVector2D(645.f, 10.f));
+	FillDisc(Treba.X, Treba.Y, 5.f, Hex(TEXT("d88b3a")));
+	DrawRing(Treba.X, Treba.Y, 10.f, Hex(TEXT("e8c9a0"), 0.65f), 1.f);
+	const FVector2D Arena = ToMap(FVector2D(720.f, 0.f));
+	DrawRing(Arena.X, Arena.Y, 9.f, BloodHi, 2.f);
+
+	struct FMapLabel { const TCHAR* Text; FVector2D Point; };
+	const FMapLabel Labels[] = {
+		{ TEXT("Сухоречье"), FVector2D(0.f, 0.f) }, { TEXT("Околица"), FVector2D(140.f, 38.f) },
+		{ TEXT("Присяжный камень"), FVector2D(280.f, -20.f) }, { TEXT("Стрелокопни"), FVector2D(445.f, 0.f) },
+		{ TEXT("Ведёрный ряд"), FVector2D(560.f, 20.f) }, { TEXT("Треба"), FVector2D(645.f, 10.f) },
+		{ TEXT("Экзамен"), FVector2D(720.f, 0.f) },
+	};
+	for (const FMapLabel& L : Labels)
+	{
+		const FVector2D Q = ToMap(L.Point);
+		Txt(L.Text, Q.X, Q.Y + 16.f, Font(2, 14.f), BoneDim, EAlign::Center);
+	}
+
+	Txt(TEXT("●  герой"), X0 + 32.f, Y0 + PanelH - 58.f, Font(2, 15.f), Bone, EAlign::Left);
+	Txt(TEXT("◆  треба"), X0 + 145.f, Y0 + PanelH - 58.f, Font(2, 15.f), Gold, EAlign::Left);
+	Txt(TEXT("○  экзамен"), X0 + 255.f, Y0 + PanelH - 58.f, Font(2, 15.f), BloodHi, EAlign::Left);
+	Txt(FString(TEXT("Текущая зона: ")) + ZoneName(P.X), X0 + PanelW - 28.f, Y0 + PanelH - 58.f, Font(2, 15.f), BoneDim, EAlign::Right);
+}
+
 // ---------------------------------------------------------------- HUD
 
 void AFNHUD::DrawHUD()
@@ -621,6 +692,11 @@ void AFNHUD::DrawHUD()
 	const float Time = GetWorld()->GetRealTimeSeconds();
 
 	AFNCharacter* Player = Cast<AFNCharacter>(GetOwningPawn());
+	if (Player && Player->IsMapOpen())
+	{
+		DrawMap(Player);
+		return;
+	}
 	if (Player && Player->IsTreeOpen())
 	{
 		DrawTree(Player);
@@ -635,7 +711,7 @@ void AFNHUD::DrawHUD()
 
 	if (GetWorld()->GetTimeSeconds() < 15.0)
 	{
-		Txt(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо"),
+		Txt(TEXT("WASD — ход   ·   Курсор — цель   ·   ЛКМ — выстрел   ·   ПКМ — удар   ·   Пробел — уклонение   ·   R — перезарядка   ·   Q — оружие   ·   Колесо — масштаб   ·   1–3 — навыки   ·   Tab — древо   ·   M — карта"),
 			W * 0.5f, 604.f, Font(3, 15.f), BoneDim, EAlign::Center);
 	}
 
